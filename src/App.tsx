@@ -18,9 +18,12 @@ export default function App() {
   const passthroughTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load saved position on mount
+  // Ignore old-system positions where both x,y are near 0 (those were bottom-right offsets)
   useEffect(() => {
     const saved = loadPosition();
-    if (saved) setPosition(saved);
+    if (saved && (saved.x > 50 || saved.y > 50)) {
+      setPosition(saved);
+    }
   }, []);
 
   // Keep ref in sync for use in event handlers
