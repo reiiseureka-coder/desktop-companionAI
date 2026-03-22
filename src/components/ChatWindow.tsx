@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { listen } from "@tauri-apps/api/event";
-import { loadHistory, saveHistory } from "../utils/storage";
+import { open } from "@tauri-apps/api/dialog";
+import { loadHistory, saveHistory, loadSettings, saveSettings } from "../utils/storage";
 
 interface Message {
   id: number;
@@ -22,52 +23,54 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
   const [messages, setMessages] = useState<Message[]>(() => loadHistory());
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+
+  const savedSettings = loadSettings();
+  const [workingDir, setWorkingDir] = useState(savedSettings.workingDir);
+  const [autoPermissions, setAutoPermissions] = useState(savedSettings.autoPermissions);
+
   const inputRef = useRef<HTMLInputElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  // Auto-focus input
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  // Scroll to bottom on new messages
   useEffect(() => {
     if (logRef.current) {
       logRef.current.scrollTop = logRef.current.scrollHeight;
     }
   }, [messages]);
 
-  // Save history on change (exclude streaming messages)
   useEffect(() => {
     const toSave = messages.filter((m) => !m.streaming).slice(-MAX_HISTORY);
     saveHistory(toSave);
   }, [messages]);
 
-  // Listen for streaming output from Tauri backend
+  // Persist settings on change
+  useEffect(() => {
+    saveSettings({ workingDir, autoPermissions });
+  }, [workingDir, autoPermissions]);
+
+  // Stream events from Rust backend
   useEffect(() => {
     const unlisten = listen<string>("claude-output", (event) => {
       setMessages((prev) => {
         const last = prev[prev.length - 1];
-        if (last && last.streaming) {
-          return [
-            ...prev.slice(0, -1),
-            { ...last, content: last.content + event.payload },
-          ];
+        if (last?.streaming) {
+          return [...prev.slice(0, -1), { ...last, content: last.content + event.payload }];
         }
         return prev;
       });
     });
 
-    const unlistenDone = listen<string>("claude-done", (event) => {
+    const unlistenDone = listen<string>("claude-done", () => {
       setIsLoading(false);
       setMessages((prev) => {
         const last = prev[prev.length - 1];
-        if (last && last.streaming) {
-          return [
-            ...prev.slice(0, -1),
-            { ...last, streaming: false },
-          ];
+        if (last?.streaming) {
+          return [...prev.slice(0, -1), { ...last, streaming: false }];
         }
         return prev;
       });
@@ -76,14 +79,8 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
     const unlistenError = listen<string>("claude-error", (event) => {
       setIsLoading(false);
       setMessages((prev) => {
-        // Remove incomplete streaming message if exists
-        const filtered = prev[prev.length - 1]?.streaming
-          ? prev.slice(0, -1)
-          : prev;
-        return [
-          ...filtered,
-          { id: ++msgId, role: "error", content: `エラー: ${event.payload}` },
-        ];
+        const filtered = prev[prev.length - 1]?.streaming ? prev.slice(0, -1) : prev;
+        return [...filtered, { id: ++msgId, role: "error", content: `エラー: ${event.payload}` }];
       });
     });
 
@@ -108,20 +105,19 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
     ]);
 
     try {
-      await invoke("send_to_claude", { message: text });
+      await invoke("send_to_claude", {
+        message: text,
+        workingDir: workingDir || null,
+        autoPermissions,
+      });
     } catch (e) {
       setIsLoading(false);
       setMessages((prev) => {
-        const filtered = prev[prev.length - 1]?.streaming
-          ? prev.slice(0, -1)
-          : prev;
-        return [
-          ...filtered,
-          { id: ++msgId, role: "error", content: `起動エラー: ${String(e)}` },
-        ];
+        const filtered = prev[prev.length - 1]?.streaming ? prev.slice(0, -1) : prev;
+        return [...filtered, { id: ++msgId, role: "error", content: `起動エラー: ${String(e)}` }];
       });
     }
-  }, [input, isLoading]);
+  }, [input, isLoading, workingDir, autoPermissions]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -129,9 +125,7 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
         e.preventDefault();
         sendMessage();
       }
-      if (e.key === "Escape") {
-        onClose();
-      }
+      if (e.key === "Escape") onClose();
     },
     [sendMessage, onClose]
   );
@@ -143,26 +137,40 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
     [onClose]
   );
 
+  const pickDirectory = useCallback(async () => {
+    try {
+      const selected = await open({ directory: true, multiple: false, title: "作業ディレクトリを選択" });
+      if (typeof selected === "string") {
+        setWorkingDir(selected);
+      }
+    } catch (_) {}
+  }, []);
+
   const clearHistory = useCallback(() => {
     setMessages([]);
     saveHistory([]);
   }, []);
 
+  const dirName = workingDir ? workingDir.split("/").pop() || workingDir : null;
+
   return (
-    <div
-      ref={overlayRef}
-      className="chat-overlay"
-      onClick={handleOverlayClick}
-    >
+    <div ref={overlayRef} className="chat-overlay" onClick={handleOverlayClick}>
       <div className="chat-window">
+        {/* Header */}
         <div className="chat-header">
-          <span>AI Assistant</span>
+          <span>
+            AI Assistant
+            {dirName && <span className="chat-header-dir"> / {dirName}</span>}
+          </span>
           <div className="chat-header-actions">
             <button
-              className="btn-clear"
-              onClick={clearHistory}
-              title="履歴をクリア"
+              className={`btn-icon ${showSettings ? "active" : ""}`}
+              onClick={() => setShowSettings((s) => !s)}
+              title="設定"
             >
+              ⚙
+            </button>
+            <button className="btn-clear" onClick={clearHistory} title="履歴をクリア">
               ✕ Clear
             </button>
             <button className="btn-close" onClick={onClose} title="閉じる (ESC)">
@@ -171,10 +179,59 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
           </div>
         </div>
 
+        {/* Settings panel */}
+        {showSettings && (
+          <div className="settings-panel">
+            <div className="settings-row">
+              <span className="settings-label">作業ディレクトリ</span>
+              <div className="settings-dir-row">
+                <span className="settings-dir-path" title={workingDir}>
+                  {workingDir || "未設定（カレントディレクトリ）"}
+                </span>
+                <button className="btn-pick" onClick={pickDirectory}>
+                  フォルダ選択
+                </button>
+                {workingDir && (
+                  <button className="btn-pick btn-pick--clear" onClick={() => setWorkingDir("")}>
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="settings-row">
+              <label className="settings-toggle">
+                <input
+                  type="checkbox"
+                  checked={autoPermissions}
+                  onChange={(e) => setAutoPermissions(e.target.checked)}
+                />
+                <span>
+                  Auto実行モード
+                  <small>（ファイル編集・コマンド実行を自動承認）</small>
+                </span>
+              </label>
+              {autoPermissions && (
+                <div className="settings-warn">
+                  ⚠ 指定ディレクトリのファイルが自動で変更される場合があります
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Chat log */}
         <div className="chat-log" ref={logRef}>
           {messages.length === 0 && (
             <div className="chat-empty">
-              何か質問してください。Claude Codeが回答します。
+              {workingDir
+                ? `📂 ${dirName} のプロジェクトについて聞いてください`
+                : "何か質問してください。Claude Codeが回答します。"}
+              {!workingDir && (
+                <div className="chat-empty-hint">
+                  ⚙ 設定からVSCodeのプロジェクトフォルダを指定すると<br />
+                  ファイルの読み書きや実行ができます
+                </div>
+              )}
             </div>
           )}
           {messages.map((msg) => (
@@ -190,22 +247,23 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
           ))}
         </div>
 
+        {/* Input */}
         <div className="chat-input-area">
           <input
             ref={inputRef}
             type="text"
             className="chat-input"
-            placeholder="メッセージを入力... (Enter送信 / ESCで閉じる)"
+            placeholder={
+              autoPermissions
+                ? "例: src/App.tsx のバグを直して (Enterで送信)"
+                : "メッセージを入力... (Enter送信 / ESCで閉じる)"
+            }
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={isLoading}
           />
-          <button
-            className="btn-send"
-            onClick={sendMessage}
-            disabled={isLoading || !input.trim()}
-          >
+          <button className="btn-send" onClick={sendMessage} disabled={isLoading || !input.trim()}>
             {isLoading ? "…" : "送信"}
           </button>
         </div>

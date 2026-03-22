@@ -134,6 +134,134 @@ html, body {
   color: #fff;
 }
 
+/* Settings toggle button */
+.btn-icon {
+  background: none;
+  border: 1px solid rgba(100, 150, 255, 0.2);
+  color: #aaa;
+  font-size: 14px;
+  border-radius: 6px;
+  padding: 2px 7px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-icon:hover, .btn-icon.active {
+  background: rgba(100, 150, 255, 0.2);
+  color: #c0d8ff;
+}
+
+/* Header dir indicator */
+.chat-header-dir {
+  font-weight: 400;
+  color: rgba(160, 196, 255, 0.6);
+  font-size: 11px;
+  margin-left: 2px;
+}
+
+/* Settings panel */
+.settings-panel {
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(100, 150, 255, 0.15);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-label {
+  font-size: 11px;
+  color: rgba(160, 196, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.settings-dir-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-dir-path {
+  flex: 1;
+  font-size: 12px;
+  color: #c0d4ff;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(100, 150, 255, 0.2);
+  border-radius: 6px;
+  padding: 5px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-pick {
+  background: rgba(60, 100, 255, 0.25);
+  border: 1px solid rgba(100, 150, 255, 0.35);
+  border-radius: 6px;
+  color: #a0c4ff;
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.btn-pick:hover {
+  background: rgba(80, 130, 255, 0.4);
+}
+.btn-pick--clear {
+  padding: 5px 8px;
+  background: rgba(255, 80, 80, 0.15);
+  border-color: rgba(255, 100, 100, 0.3);
+  color: rgba(255, 140, 140, 0.8);
+}
+.btn-pick--clear:hover {
+  background: rgba(255, 80, 80, 0.3);
+}
+
+.settings-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  color: #c0d8ff;
+  font-size: 13px;
+}
+.settings-toggle input[type="checkbox"] {
+  margin-top: 2px;
+  accent-color: #5090ff;
+  cursor: pointer;
+}
+.settings-toggle small {
+  display: block;
+  color: rgba(180, 200, 255, 0.45);
+  font-size: 11px;
+  margin-top: 1px;
+}
+
+.settings-warn {
+  background: rgba(255, 160, 0, 0.1);
+  border: 1px solid rgba(255, 160, 0, 0.25);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: rgba(255, 200, 100, 0.85);
+}
+
+/* Empty state hint */
+.chat-empty-hint {
+  margin-top: 12px;
+  font-size: 12px;
+  color: rgba(180, 200, 255, 0.3);
+  line-height: 1.6;
+}
+
 /* Log area */
 .chat-log {
   flex: 1;

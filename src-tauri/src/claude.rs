@@ -1,59 +1,74 @@
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::{AppHandle, Manager};
 
-/// Shared state: track if a Claude process is running
-pub struct ClaudeState {
-    pub running: bool,
-}
-
 /// Send a message to Claude Code CLI and stream the output back via Tauri events.
+///
+/// Parameters:
+///   message          – user's prompt
+///   working_dir      – project directory to run Claude Code in (optional)
+///   auto_permissions – if true, adds --dangerously-skip-permissions so Claude
+///                      can edit files / run commands without asking
 ///
 /// Events emitted:
 ///   "claude-output" – streamed text chunks (String)
-///   "claude-done"   – process finished (String: empty or exit message)
+///   "claude-done"   – process finished successfully
 ///   "claude-error"  – error occurred (String)
 #[tauri::command]
 pub async fn send_to_claude(
     message: String,
+    working_dir: Option<String>,
+    auto_permissions: bool,
     app: AppHandle,
 ) -> Result<(), String> {
-    // Run the Claude CLI in a thread so we don't block the async runtime
     thread::spawn(move || {
-        run_claude(message, app);
+        run_claude(message, working_dir, auto_permissions, app);
     });
     Ok(())
 }
 
-/// Stop any running Claude process (best-effort)
+/// Stop any running Claude process (placeholder for future process tracking)
 #[tauri::command]
 pub async fn stop_claude() -> Result<(), String> {
-    // Currently a no-op placeholder; process management can be added if needed
     Ok(())
 }
 
-fn run_claude(message: String, app: AppHandle) {
-    // Attempt to find claude binary
-    // Priority: `claude` in PATH, then common install locations
-    let claude_bin = find_claude_binary();
-
-    let mut cmd = match claude_bin {
-        Some(bin) => Command::new(bin),
+fn run_claude(message: String, working_dir: Option<String>, auto_permissions: bool, app: AppHandle) {
+    let claude_bin = match find_claude_binary() {
+        Some(bin) => bin,
         None => {
-            emit_error(&app, "claude コマンドが見つかりません。`npm install -g @anthropic-ai/claude-code` でインストールしてください。");
+            emit_error(
+                &app,
+                "claude コマンドが見つかりません。`npm install -g @anthropic-ai/claude-code` でインストールしてください。",
+            );
             return;
         }
     };
 
-    // Run: claude --print "<message>"
-    // --print: non-interactive, single response mode, outputs to stdout
-    cmd.arg("--print")
-        .arg(&message)
-        .stdout(Stdio::piped())
+    let mut cmd = Command::new(&claude_bin);
+
+    // --print: non-interactive mode that still runs all tools (file edit, bash, etc.)
+    cmd.arg("--print").arg(&message);
+
+    // Auto mode: skip all permission prompts so file edits / bash run automatically
+    if auto_permissions {
+        cmd.arg("--dangerously-skip-permissions");
+    }
+
+    // Set working directory (the VSCode project root)
+    if let Some(ref dir) = working_dir {
+        let path = std::path::Path::new(dir);
+        if path.is_dir() {
+            cmd.current_dir(path);
+        } else {
+            emit_error(&app, &format!("ディレクトリが存在しません: {}", dir));
+            return;
+        }
+    }
+
+    cmd.stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        // Ensure no TTY attachment that might cause hanging
         .stdin(Stdio::null());
 
     let mut child = match cmd.spawn() {
@@ -64,14 +79,13 @@ fn run_claude(message: String, app: AppHandle) {
         }
     };
 
-    // Stream stdout
+    // Stream stdout line by line → "claude-output" events
     if let Some(stdout) = child.stdout.take() {
         let reader = BufReader::new(stdout);
         for line in reader.lines() {
             match line {
                 Ok(l) => {
-                    let payload = format!("{}\n", l);
-                    let _ = app.emit_all("claude-output", payload);
+                    let _ = app.emit_all("claude-output", format!("{}\n", l));
                 }
                 Err(e) => {
                     emit_error(&app, &format!("読み取りエラー: {}", e));
@@ -81,7 +95,7 @@ fn run_claude(message: String, app: AppHandle) {
         }
     }
 
-    // Capture stderr for error reporting
+    // Collect stderr for error reporting
     let mut stderr_output = String::new();
     if let Some(stderr) = child.stderr.take() {
         let reader = BufReader::new(stderr);
@@ -91,13 +105,12 @@ fn run_claude(message: String, app: AppHandle) {
         }
     }
 
-    // Wait for process to exit
     match child.wait() {
         Ok(status) if status.success() => {
             let _ = app.emit_all("claude-done", "");
         }
         Ok(status) => {
-            let msg = if !stderr_output.is_empty() {
+            let msg = if !stderr_output.trim().is_empty() {
                 stderr_output.trim().to_string()
             } else {
                 format!("プロセスが終了コード {:?} で終了", status.code())
@@ -114,11 +127,9 @@ fn emit_error(app: &AppHandle, msg: &str) {
     let _ = app.emit_all("claude-error", msg.to_string());
 }
 
-/// Find the claude binary in common locations
 fn find_claude_binary() -> Option<String> {
-    // Check if `claude` is in PATH
-    let which_result = Command::new("which").arg("claude").output();
-    if let Ok(output) = which_result {
+    // Check PATH via `which`
+    if let Ok(output) = Command::new("which").arg("claude").output() {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !path.is_empty() {
@@ -127,21 +138,19 @@ fn find_claude_binary() -> Option<String> {
         }
     }
 
-    // Fallback: common install paths for macOS
+    // Fallback: common macOS install locations
+    let home = std::env::var("HOME").unwrap_or_default();
     let candidates = [
-        "/usr/local/bin/claude",
-        "/opt/homebrew/bin/claude",
-        // npm global installs via nvm
-        &format!(
-            "{}/node_modules/.bin/claude",
-            std::env::var("HOME").unwrap_or_default()
-        ),
-        "/usr/bin/claude",
+        "/usr/local/bin/claude".to_string(),
+        "/opt/homebrew/bin/claude".to_string(),
+        format!("{}/.npm-global/bin/claude", home),
+        format!("{}/node_modules/.bin/claude", home),
+        "/usr/bin/claude".to_string(),
     ];
 
     for candidate in &candidates {
         if std::path::Path::new(candidate).exists() {
-            return Some(candidate.to_string());
+            return Some(candidate.clone());
         }
     }
 

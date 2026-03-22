@@ -26,6 +26,7 @@ tauri = { version = "1.6", features = [
   "app-all",
   "process-all",
   "dialog-all",
+  "dialog-open",
   "fs-all",
   "path-all",
   "macos-private-api"

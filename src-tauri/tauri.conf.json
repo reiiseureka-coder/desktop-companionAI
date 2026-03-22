@@ -26,6 +26,13 @@
       },
       "process": {
         "all": true
+      },
+      "dialog": {
+        "all": true
+      },
+      "fs": {
+        "all": true,
+        "scope": ["$HOME/**"]
       }
     },
     "bundle": {

@@ -1,5 +1,27 @@
 const POSITION_KEY = "companion_position";
 const HISTORY_KEY = "companion_history";
+const SETTINGS_KEY = "companion_settings";
+
+export interface CompanionSettings {
+  workingDir: string;
+  autoPermissions: boolean;
+}
+
+export function saveSettings(settings: CompanionSettings): void {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch (_) {}
+}
+
+export function loadSettings(): CompanionSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return { workingDir: "", autoPermissions: false };
+    return JSON.parse(raw) as CompanionSettings;
+  } catch (_) {
+    return { workingDir: "", autoPermissions: false };
+  }
+}
 
 export interface StoredPosition {
   x: number;
