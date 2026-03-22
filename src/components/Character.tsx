@@ -6,6 +6,12 @@ interface Props {
   onPositionChange: (x: number, y: number) => void;
 }
 
+const CHAR_SIZE = 80;
+
+function clamp(val: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, val));
+}
+
 export default function Character({ position, onClick, onPositionChange }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -13,7 +19,6 @@ export default function Character({ position, onClick, onPositionChange }: Props
   const [pos, setPos] = useState(position);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Sync external position (e.g., initial load)
   useEffect(() => {
     setPos(position);
   }, []);
@@ -38,8 +43,8 @@ export default function Character({ position, onClick, onPositionChange }: Props
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
         setIsDragging(true);
       }
-      const newX = dragStart.current.ex + dx;
-      const newY = dragStart.current.ey + dy;
+      const newX = clamp(dragStart.current.ex + dx, 0, window.innerWidth - CHAR_SIZE);
+      const newY = clamp(dragStart.current.ey + dy, 0, window.innerHeight - CHAR_SIZE);
       setPos({ x: newX, y: newY });
     };
 
@@ -51,8 +56,8 @@ export default function Character({ position, onClick, onPositionChange }: Props
       dragging.current = false;
       setIsDragging(false);
 
-      const newX = dragStart.current.ex + dx;
-      const newY = dragStart.current.ey + dy;
+      const newX = clamp(dragStart.current.ex + dx, 0, window.innerWidth - CHAR_SIZE);
+      const newY = clamp(dragStart.current.ey + dy, 0, window.innerHeight - CHAR_SIZE);
       if (wasDragging) {
         onPositionChange(newX, newY);
       }
@@ -75,7 +80,8 @@ export default function Character({ position, onClick, onPositionChange }: Props
       ref={ref}
       className="character"
       style={{
-        transform: `translate(${pos.x}px, ${pos.y}px)`,
+        left: `${pos.x}px`,
+        top: `${pos.y}px`,
         cursor: isDragging ? "grabbing" : "pointer",
       }}
       onMouseDown={onMouseDown}

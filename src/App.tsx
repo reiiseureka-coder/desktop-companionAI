@@ -7,7 +7,11 @@ import { loadPosition, savePosition } from "./utils/storage";
 export default function App() {
   const [chatOpen, setChatOpen] = useState(false);
   const [visible, setVisible] = useState(true);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
+  // Default: bottom-right corner
+  const [position, setPosition] = useState({
+    x: window.innerWidth - 100,
+    y: window.innerHeight - 100,
+  });
 
   const chatOpenRef = useRef(false);
   const currentPassthrough = useRef(false);

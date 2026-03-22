@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
+import { exit } from "@tauri-apps/api/process";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/api/dialog";
 import { loadHistory, saveHistory, loadSettings, saveSettings } from "../utils/storage";
@@ -144,15 +145,21 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
 
   const dirName = workingDir ? workingDir.split("/").pop() || workingDir : null;
 
-  // Position bubble above the character, right-aligned
-  // Character base: right:20px bottom:20px, then translated by characterPosition
-  const bubbleRight = 20 - characterPosition.x;
-  const bubbleBottom = 112 - characterPosition.y; // 20 (char bottom) + 80 (char height) + 12 (gap)
+  // Character is at absolute (characterPosition.x, characterPosition.y) from top-left
+  // Bubble appears above the character, right-aligned to character's right edge
+  const BUBBLE_W = 340;
+  const CHAR_SIZE = 80;
+  const GAP = 12;
+  const bubbleLeft = Math.max(8, Math.min(
+    characterPosition.x + CHAR_SIZE - BUBBLE_W,
+    window.innerWidth - BUBBLE_W - 8
+  ));
+  const bubbleBottom = window.innerHeight - characterPosition.y + GAP;
 
   return (
     <div
       className="chat-bubble"
-      style={{ bottom: `${bubbleBottom}px`, right: `${bubbleRight}px` }}
+      style={{ left: `${bubbleLeft}px`, bottom: `${bubbleBottom}px` }}
     >
       <div className="bubble-content">
         {/* Header */}
@@ -176,6 +183,9 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
             </button>
             <button className="btn-bubble-close" onClick={onClose} title="閉じる (ESC)">
               ✕
+            </button>
+            <button className="btn-bubble-quit" onClick={() => exit(0)} title="アプリを終了">
+              ⏻
             </button>
           </div>
         </div>
