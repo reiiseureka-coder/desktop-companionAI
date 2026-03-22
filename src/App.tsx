@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
-import { appWindow } from "@tauri-apps/api/window";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { invoke } from "@tauri-apps/api/tauri";
 import Character from "./components/Character";
 import ChatWindow from "./components/ChatWindow";
 import { loadPosition, savePosition } from "./utils/storage";
@@ -9,18 +9,73 @@ export default function App() {
   const [visible, setVisible] = useState(true);
   const [position, setPosition] = useState({ x: 0, y: 0 });
 
+  const chatOpenRef = useRef(false);
+  const currentPassthrough = useRef(false);
+  const passthroughTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Load saved position on mount
   useEffect(() => {
     const saved = loadPosition();
     if (saved) setPosition(saved);
   }, []);
 
+  // Keep ref in sync for use in event handlers
+  useEffect(() => {
+    chatOpenRef.current = chatOpen;
+  }, [chatOpen]);
+
+  // Click-through: pass clicks to underlying apps when over transparent area
+  useEffect(() => {
+    const setPassthrough = (value: boolean) => {
+      if (currentPassthrough.current === value) return;
+      currentPassthrough.current = value;
+      invoke("set_cursor_passthrough", { passthrough: value }).catch(() => {});
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (passthroughTimer.current) {
+        clearTimeout(passthroughTimer.current);
+        passthroughTimer.current = null;
+      }
+
+      // When chat is open, keep window interactive (overlay handles outside clicks)
+      if (chatOpenRef.current) {
+        setPassthrough(false);
+        return;
+      }
+
+      // Check if cursor is over an interactive element (character or chat)
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const isInteractive = el?.closest(".character, .chat-bubble") !== null;
+
+      if (isInteractive) {
+        setPassthrough(false);
+      } else {
+        // Enable click-through for transparent area
+        setPassthrough(true);
+        // Briefly re-enable tracking so we can detect mouse moving back to interactive area
+        passthroughTimer.current = setTimeout(() => {
+          setPassthrough(false);
+        }, 80);
+      }
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    // Start with passthrough enabled
+    invoke("set_cursor_passthrough", { passthrough: true }).catch(() => {});
+    currentPassthrough.current = true;
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      if (passthroughTimer.current) clearTimeout(passthroughTimer.current);
+      invoke("set_cursor_passthrough", { passthrough: false }).catch(() => {});
+    };
+  }, []);
+
   // Global keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Tab: toggle visibility
       if (e.key === "Tab" && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        // Only toggle if no input is focused
         const active = document.activeElement;
         if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
         e.preventDefault();
@@ -29,7 +84,6 @@ export default function App() {
           return !v;
         });
       }
-      // ESC: close chat
       if (e.key === "Escape") {
         setChatOpen(false);
       }
@@ -48,7 +102,7 @@ export default function App() {
     savePosition(x, y);
   }, []);
 
-  const handleOutsideClick = useCallback(() => {
+  const handleClose = useCallback(() => {
     setChatOpen(false);
   }, []);
 
@@ -64,7 +118,7 @@ export default function App() {
       {chatOpen && (
         <ChatWindow
           characterPosition={position}
-          onClose={handleOutsideClick}
+          onClose={handleClose}
         />
       )}
     </div>

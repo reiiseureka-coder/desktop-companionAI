@@ -31,7 +31,6 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
-  const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -48,7 +47,6 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
     saveHistory(toSave);
   }, [messages]);
 
-  // Persist settings on change
   useEffect(() => {
     saveSettings({ workingDir, autoPermissions });
   }, [workingDir, autoPermissions]);
@@ -130,13 +128,6 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
     [sendMessage, onClose]
   );
 
-  const handleOverlayClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if (e.target === overlayRef.current) onClose();
-    },
-    [onClose]
-  );
-
   const pickDirectory = useCallback(async () => {
     try {
       const selected = await open({ directory: true, multiple: false, title: "作業ディレクトリを選択" });
@@ -153,28 +144,38 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
 
   const dirName = workingDir ? workingDir.split("/").pop() || workingDir : null;
 
+  // Position bubble above the character, right-aligned
+  // Character base: right:20px bottom:20px, then translated by characterPosition
+  const bubbleRight = 20 - characterPosition.x;
+  const bubbleBottom = 112 - characterPosition.y; // 20 (char bottom) + 80 (char height) + 12 (gap)
+
   return (
-    <div ref={overlayRef} className="chat-overlay" onClick={handleOverlayClick}>
-      <div className="chat-window">
+    <div
+      className="chat-bubble"
+      style={{ bottom: `${bubbleBottom}px`, right: `${bubbleRight}px` }}
+    >
+      <div className="bubble-content">
         {/* Header */}
-        <div className="chat-header">
-          <span>
-            AI Assistant
-            {dirName && <span className="chat-header-dir"> / {dirName}</span>}
-          </span>
-          <div className="chat-header-actions">
+        <div className="bubble-header">
+          <div className="bubble-header-title">
+            <span className="bubble-header-name">
+              AI
+              {dirName && <span className="bubble-header-dir"> / {dirName}</span>}
+            </span>
+          </div>
+          <div className="bubble-header-actions">
             <button
-              className={`btn-icon ${showSettings ? "active" : ""}`}
+              className={`btn-bubble-icon ${showSettings ? "active" : ""}`}
               onClick={() => setShowSettings((s) => !s)}
               title="設定"
             >
               ⚙
             </button>
-            <button className="btn-clear" onClick={clearHistory} title="履歴をクリア">
-              ✕ Clear
+            <button className="btn-bubble-icon btn-bubble-clear" onClick={clearHistory} title="履歴をクリア">
+              🗑
             </button>
-            <button className="btn-close" onClick={onClose} title="閉じる (ESC)">
-              ×
+            <button className="btn-bubble-close" onClick={onClose} title="閉じる (ESC)">
+              ✕
             </button>
           </div>
         </div>
@@ -186,10 +187,10 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
               <span className="settings-label">作業ディレクトリ</span>
               <div className="settings-dir-row">
                 <span className="settings-dir-path" title={workingDir}>
-                  {workingDir || "未設定（カレントディレクトリ）"}
+                  {workingDir || "未設定"}
                 </span>
                 <button className="btn-pick" onClick={pickDirectory}>
-                  フォルダ選択
+                  選択
                 </button>
                 {workingDir && (
                   <button className="btn-pick btn-pick--clear" onClick={() => setWorkingDir("")}>
@@ -206,13 +207,13 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
                   onChange={(e) => setAutoPermissions(e.target.checked)}
                 />
                 <span>
-                  Auto実行モード
-                  <small>（ファイル編集・コマンド実行を自動承認）</small>
+                  Auto実行
+                  <small>（自動承認モード）</small>
                 </span>
               </label>
               {autoPermissions && (
                 <div className="settings-warn">
-                  ⚠ 指定ディレクトリのファイルが自動で変更される場合があります
+                  ⚠ ファイルが自動で変更される場合があります
                 </div>
               )}
             </div>
@@ -224,21 +225,18 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
           {messages.length === 0 && (
             <div className="chat-empty">
               {workingDir
-                ? `📂 ${dirName} のプロジェクトについて聞いてください`
-                : "何か質問してください。Claude Codeが回答します。"}
+                ? `📂 ${dirName} について聞いてください`
+                : "何でも聞いてください！"}
               {!workingDir && (
                 <div className="chat-empty-hint">
-                  ⚙ 設定からVSCodeのプロジェクトフォルダを指定すると<br />
-                  ファイルの読み書きや実行ができます
+                  ⚙ 設定からプロジェクトフォルダを指定すると<br />
+                  ファイルの読み書きができます
                 </div>
               )}
             </div>
           )}
           {messages.map((msg) => (
             <div key={msg.id} className={`chat-msg chat-msg--${msg.role}`}>
-              <span className="chat-msg-label">
-                {msg.role === "user" ? "You" : msg.role === "error" ? "⚠" : "AI"}
-              </span>
               <div className="chat-msg-content">
                 <pre>{msg.content}</pre>
                 {msg.streaming && <span className="cursor-blink">▋</span>}
@@ -253,18 +251,14 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
             ref={inputRef}
             type="text"
             className="chat-input"
-            placeholder={
-              autoPermissions
-                ? "例: src/App.tsx のバグを直して (Enterで送信)"
-                : "メッセージを入力... (Enter送信 / ESCで閉じる)"
-            }
+            placeholder={isLoading ? "考え中…" : "メッセージを入力（Enter送信）"}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={isLoading}
           />
           <button className="btn-send" onClick={sendMessage} disabled={isLoading || !input.trim()}>
-            {isLoading ? "…" : "送信"}
+            {isLoading ? "…" : "➤"}
           </button>
         </div>
       </div>
