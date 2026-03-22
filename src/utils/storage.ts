@@ -1,6 +1,7 @@
 const POSITION_KEY = "companion_position";
 const HISTORY_KEY = "companion_history";
 const SETTINGS_KEY = "companion_settings";
+const IMAGE_KEY = "companion_image";
 
 export interface CompanionSettings {
   workingDir: string;
@@ -48,6 +49,26 @@ export function loadPosition(): StoredPosition | null {
   } catch (_) {
     return null;
   }
+}
+
+export function saveCharacterImage(dataUrl: string): void {
+  try {
+    localStorage.setItem(IMAGE_KEY, dataUrl);
+  } catch (_) {}
+}
+
+export function loadCharacterImage(): string | null {
+  try {
+    return localStorage.getItem(IMAGE_KEY);
+  } catch (_) {
+    return null;
+  }
+}
+
+export function clearCharacterImage(): void {
+  try {
+    localStorage.removeItem(IMAGE_KEY);
+  } catch (_) {}
 }
 
 export function saveHistory(messages: StoredMessage[]): void {

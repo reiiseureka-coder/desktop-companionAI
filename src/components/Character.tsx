@@ -4,6 +4,7 @@ interface Props {
   position: { x: number; y: number };
   onClick: () => void;
   onPositionChange: (x: number, y: number) => void;
+  imageSrc: string | null;
 }
 
 const CHAR_SIZE = 80;
@@ -12,7 +13,7 @@ function clamp(val: number, min: number, max: number) {
   return Math.max(min, Math.min(max, val));
 }
 
-export default function Character({ position, onClick, onPositionChange }: Props) {
+export default function Character({ position, onClick, onPositionChange, imageSrc }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   const dragStart = useRef({ mx: 0, my: 0, ex: 0, ey: 0 });
@@ -89,7 +90,7 @@ export default function Character({ position, onClick, onPositionChange }: Props
       title="クリックしてチャットを開く (Tabで非表示)"
     >
       <img
-        src="/character.png"
+        src={imageSrc || "/character.png"}
         alt="AI Assistant"
         draggable={false}
         className="character-img"

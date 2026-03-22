@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import Character from "./components/Character";
 import ChatWindow from "./components/ChatWindow";
-import { loadPosition, savePosition } from "./utils/storage";
+import { loadPosition, savePosition, loadCharacterImage, saveCharacterImage, clearCharacterImage } from "./utils/storage";
 
 export default function App() {
   const [chatOpen, setChatOpen] = useState(false);
@@ -12,6 +12,7 @@ export default function App() {
     x: window.innerWidth - 100,
     y: window.innerHeight - 100,
   });
+  const [characterImage, setCharacterImage] = useState<string | null>(() => loadCharacterImage());
 
   const chatOpenRef = useRef(false);
   const currentPassthrough = useRef(false);
@@ -45,22 +46,18 @@ export default function App() {
         passthroughTimer.current = null;
       }
 
-      // When chat is open, keep window interactive (overlay handles outside clicks)
       if (chatOpenRef.current) {
         setPassthrough(false);
         return;
       }
 
-      // Check if cursor is over an interactive element (character or chat)
       const el = document.elementFromPoint(e.clientX, e.clientY);
       const isInteractive = el?.closest(".character, .chat-bubble") !== null;
 
       if (isInteractive) {
         setPassthrough(false);
       } else {
-        // Enable click-through for transparent area
         setPassthrough(true);
-        // Briefly re-enable tracking so we can detect mouse moving back to interactive area
         passthroughTimer.current = setTimeout(() => {
           setPassthrough(false);
         }, 80);
@@ -68,7 +65,6 @@ export default function App() {
     };
 
     window.addEventListener("mousemove", handleMouseMove);
-    // Start with passthrough enabled
     invoke("set_cursor_passthrough", { passthrough: true }).catch(() => {});
     currentPassthrough.current = true;
 
@@ -113,6 +109,12 @@ export default function App() {
     setChatOpen(false);
   }, []);
 
+  const handleImageChange = useCallback((dataUrl: string | null) => {
+    setCharacterImage(dataUrl);
+    if (dataUrl) saveCharacterImage(dataUrl);
+    else clearCharacterImage();
+  }, []);
+
   if (!visible) return null;
 
   return (
@@ -121,11 +123,14 @@ export default function App() {
         position={position}
         onClick={handleCharacterClick}
         onPositionChange={handlePositionChange}
+        imageSrc={characterImage}
       />
       {chatOpen && (
         <ChatWindow
           characterPosition={position}
           onClose={handleClose}
+          onImageChange={handleImageChange}
+          currentImage={characterImage}
         />
       )}
     </div>

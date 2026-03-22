@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/tauri";
 import { exit } from "@tauri-apps/api/process";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/api/dialog";
+import { readBinaryFile } from "@tauri-apps/api/fs";
 import { loadHistory, saveHistory, loadSettings, saveSettings } from "../utils/storage";
 
 interface Message {
@@ -15,12 +16,14 @@ interface Message {
 interface Props {
   characterPosition: { x: number; y: number };
   onClose: () => void;
+  onImageChange: (dataUrl: string | null) => void;
+  currentImage: string | null;
 }
 
 const MAX_HISTORY = 20;
 let msgId = 0;
 
-export default function ChatWindow({ characterPosition, onClose }: Props) {
+export default function ChatWindow({ characterPosition, onClose, onImageChange, currentImage }: Props) {
   const [messages, setMessages] = useState<Message[]>(() => loadHistory());
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -129,6 +132,30 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
     [sendMessage, onClose]
   );
 
+  const pickImage = useCallback(async () => {
+    try {
+      const filePath = await open({
+        title: "キャラクター画像を選択",
+        filters: [{ name: "画像", extensions: ["png", "jpg", "jpeg", "gif", "webp"] }],
+      });
+      if (typeof filePath !== "string") return;
+
+      const bytes = await readBinaryFile(filePath);
+      const base64 = btoa(
+        Array.from(new Uint8Array(bytes))
+          .map((b) => String.fromCharCode(b))
+          .join("")
+      );
+      const ext = filePath.split(".").pop()?.toLowerCase() || "png";
+      const mime =
+        ext === "jpg" || ext === "jpeg" ? "image/jpeg"
+        : ext === "gif" ? "image/gif"
+        : ext === "webp" ? "image/webp"
+        : "image/png";
+      onImageChange(`data:${mime};base64,${base64}`);
+    } catch (_) {}
+  }, [onImageChange]);
+
   const pickDirectory = useCallback(async () => {
     try {
       const selected = await open({ directory: true, multiple: false, title: "作業ディレクトリを選択" });
@@ -193,6 +220,22 @@ export default function ChatWindow({ characterPosition, onClose }: Props) {
         {/* Settings panel */}
         {showSettings && (
           <div className="settings-panel">
+            <div className="settings-row">
+              <span className="settings-label">キャラクター画像</span>
+              <div className="settings-dir-row">
+                {currentImage && (
+                  <img src={currentImage} className="settings-char-preview" alt="preview" />
+                )}
+                <button className="btn-pick" onClick={pickImage}>
+                  画像を選択
+                </button>
+                {currentImage && (
+                  <button className="btn-pick btn-pick--clear" onClick={() => onImageChange(null)}>
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
             <div className="settings-row">
               <span className="settings-label">作業ディレクトリ</span>
               <div className="settings-dir-row">

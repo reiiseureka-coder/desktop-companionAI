@@ -257,6 +257,15 @@ html, body {
   background: rgba(255, 80, 80, 0.22);
 }
 
+.settings-char-preview {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(124, 111, 247, 0.3);
+  flex-shrink: 0;
+}
+
 .settings-toggle {
   display: flex;
   align-items: flex-start;
