@@ -3,6 +3,8 @@
 
 mod claude;
 
+use tauri::Manager;
+
 #[tauri::command]
 fn set_cursor_passthrough(window: tauri::Window, passthrough: bool) -> Result<(), String> {
     window
@@ -12,6 +14,24 @@ fn set_cursor_passthrough(window: tauri::Window, passthrough: bool) -> Result<()
 
 fn main() {
     tauri::Builder::default()
+        .setup(|app| {
+            // macOS: run as accessory (no Dock icon, no menu bar takeover)
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+            // Resize the window to cover the full primary monitor
+            if let Some(window) = app.get_window("main") {
+                if let Ok(Some(monitor)) = window.primary_monitor() {
+                    let size = monitor.size();
+                    let scale = monitor.scale_factor();
+                    let logical_w = size.width as f64 / scale;
+                    let logical_h = size.height as f64 / scale;
+                    let _ = window.set_size(tauri::LogicalSize::new(logical_w, logical_h));
+                    let _ = window.set_position(tauri::LogicalPosition::new(0.0, 0.0));
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             claude::send_to_claude,
             claude::stop_claude,

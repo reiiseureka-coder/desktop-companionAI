@@ -2,6 +2,7 @@ const POSITION_KEY = "companion_position";
 const HISTORY_KEY = "companion_history";
 const SETTINGS_KEY = "companion_settings";
 const IMAGE_KEY = "companion_image";
+const SIZE_KEY = "companion_size";
 
 export interface CompanionSettings {
   workingDir: string;
@@ -69,6 +70,23 @@ export function clearCharacterImage(): void {
   try {
     localStorage.removeItem(IMAGE_KEY);
   } catch (_) {}
+}
+
+export function saveCharacterSize(size: number): void {
+  try {
+    localStorage.setItem(SIZE_KEY, String(size));
+  } catch (_) {}
+}
+
+export function loadCharacterSize(): number {
+  try {
+    const raw = localStorage.getItem(SIZE_KEY);
+    if (!raw) return 80;
+    const n = parseInt(raw, 10);
+    return isNaN(n) ? 80 : n;
+  } catch (_) {
+    return 80;
+  }
 }
 
 export function saveHistory(messages: StoredMessage[]): void {

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import Character from "./components/Character";
 import ChatWindow from "./components/ChatWindow";
-import { loadPosition, savePosition, loadCharacterImage, saveCharacterImage, clearCharacterImage } from "./utils/storage";
+import { loadPosition, savePosition, loadCharacterImage, saveCharacterImage, clearCharacterImage, loadCharacterSize, saveCharacterSize } from "./utils/storage";
 
 export default function App() {
   const [chatOpen, setChatOpen] = useState(false);
@@ -13,10 +13,16 @@ export default function App() {
     y: window.innerHeight - 100,
   });
   const [characterImage, setCharacterImage] = useState<string | null>(() => loadCharacterImage());
+  const [charSize, setCharSize] = useState<number>(() => loadCharacterSize());
 
   const chatOpenRef = useRef(false);
   const currentPassthrough = useRef(false);
   const passthroughTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Apply size CSS variable on mount
+  useEffect(() => {
+    document.documentElement.style.setProperty("--char-size", `${charSize}px`);
+  }, []);
 
   // Load saved position on mount
   // Ignore old-system positions where both x,y are near 0 (those were bottom-right offsets)
@@ -115,6 +121,12 @@ export default function App() {
     else clearCharacterImage();
   }, []);
 
+  const handleSizeChange = useCallback((size: number) => {
+    setCharSize(size);
+    saveCharacterSize(size);
+    document.documentElement.style.setProperty("--char-size", `${size}px`);
+  }, []);
+
   if (!visible) return null;
 
   return (
@@ -124,6 +136,7 @@ export default function App() {
         onClick={handleCharacterClick}
         onPositionChange={handlePositionChange}
         imageSrc={characterImage}
+        charSize={charSize}
       />
       {chatOpen && (
         <ChatWindow
@@ -131,6 +144,8 @@ export default function App() {
           onClose={handleClose}
           onImageChange={handleImageChange}
           currentImage={characterImage}
+          charSize={charSize}
+          onSizeChange={handleSizeChange}
         />
       )}
     </div>

@@ -5,15 +5,14 @@ interface Props {
   onClick: () => void;
   onPositionChange: (x: number, y: number) => void;
   imageSrc: string | null;
+  charSize: number;
 }
-
-const CHAR_SIZE = 80;
 
 function clamp(val: number, min: number, max: number) {
   return Math.max(min, Math.min(max, val));
 }
 
-export default function Character({ position, onClick, onPositionChange, imageSrc }: Props) {
+export default function Character({ position, onClick, onPositionChange, imageSrc, charSize }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   const dragStart = useRef({ mx: 0, my: 0, ex: 0, ey: 0 });
@@ -44,8 +43,8 @@ export default function Character({ position, onClick, onPositionChange, imageSr
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
         setIsDragging(true);
       }
-      const newX = clamp(dragStart.current.ex + dx, 0, window.innerWidth - CHAR_SIZE);
-      const newY = clamp(dragStart.current.ey + dy, 0, window.innerHeight - CHAR_SIZE);
+      const newX = clamp(dragStart.current.ex + dx, 0, window.innerWidth - charSize);
+      const newY = clamp(dragStart.current.ey + dy, 0, window.innerHeight - charSize);
       setPos({ x: newX, y: newY });
     };
 
@@ -57,8 +56,8 @@ export default function Character({ position, onClick, onPositionChange, imageSr
       dragging.current = false;
       setIsDragging(false);
 
-      const newX = clamp(dragStart.current.ex + dx, 0, window.innerWidth - CHAR_SIZE);
-      const newY = clamp(dragStart.current.ey + dy, 0, window.innerHeight - CHAR_SIZE);
+      const newX = clamp(dragStart.current.ex + dx, 0, window.innerWidth - charSize);
+      const newY = clamp(dragStart.current.ey + dy, 0, window.innerHeight - charSize);
       if (wasDragging) {
         onPositionChange(newX, newY);
       }
@@ -70,7 +69,7 @@ export default function Character({ position, onClick, onPositionChange, imageSr
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
-  }, [onPositionChange]);
+  }, [onPositionChange, charSize]);
 
   const handleClick = useCallback(() => {
     if (!isDragging) onClick();

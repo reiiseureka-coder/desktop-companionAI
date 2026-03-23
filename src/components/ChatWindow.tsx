@@ -18,12 +18,14 @@ interface Props {
   onClose: () => void;
   onImageChange: (dataUrl: string | null) => void;
   currentImage: string | null;
+  charSize: number;
+  onSizeChange: (size: number) => void;
 }
 
 const MAX_HISTORY = 20;
 let msgId = 0;
 
-export default function ChatWindow({ characterPosition, onClose, onImageChange, currentImage }: Props) {
+export default function ChatWindow({ characterPosition, onClose, onImageChange, currentImage, charSize, onSizeChange }: Props) {
   const [messages, setMessages] = useState<Message[]>(() => loadHistory());
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -175,10 +177,9 @@ export default function ChatWindow({ characterPosition, onClose, onImageChange, 
   // Character is at absolute (characterPosition.x, characterPosition.y) from top-left
   // Bubble appears above the character, right-aligned to character's right edge
   const BUBBLE_W = 340;
-  const CHAR_SIZE = 80;
   const GAP = 12;
   const bubbleLeft = Math.max(8, Math.min(
-    characterPosition.x + CHAR_SIZE - BUBBLE_W,
+    characterPosition.x + charSize - BUBBLE_W,
     window.innerWidth - BUBBLE_W - 8
   ));
   const bubbleBottom = window.innerHeight - characterPosition.y + GAP;
@@ -220,6 +221,17 @@ export default function ChatWindow({ characterPosition, onClose, onImageChange, 
         {/* Settings panel */}
         {showSettings && (
           <div className="settings-panel">
+            <div className="settings-row">
+              <span className="settings-label">サイズ調整 ({charSize}px)</span>
+              <input
+                type="range"
+                min={50}
+                max={200}
+                value={charSize}
+                onChange={(e) => onSizeChange(Number(e.target.value))}
+                className="settings-size-slider"
+              />
+            </div>
             <div className="settings-row">
               <span className="settings-label">キャラクター画像</span>
               <div className="settings-dir-row">

@@ -33,24 +33,17 @@ html, body {
   position: fixed;
   top: 0;
   left: 0;
-  width: 80px;
-  height: 80px;
+  width: var(--char-size, 80px);
+  height: var(--char-size, 80px);
   z-index: 1000;
   user-select: none;
   -webkit-user-select: none;
-  transition: filter 0.2s ease;
-  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.2));
-}
-
-.character:hover .character-img {
-  filter: brightness(1.08) drop-shadow(0 0 12px rgba(150, 120, 255, 0.5));
 }
 
 .character-img {
-  width: 80px;
-  height: 80px;
+  width: var(--char-size, 80px);
+  height: var(--char-size, 80px);
   object-fit: contain;
-  border-radius: 50%;
   pointer-events: none;
 }
 
@@ -284,6 +277,12 @@ html, body {
   color: #a090c0;
   font-size: 10px;
   margin-top: 1px;
+}
+
+.settings-size-slider {
+  width: 100%;
+  accent-color: #7c6ff7;
+  cursor: pointer;
 }
 
 .settings-warn {
