@@ -4,6 +4,7 @@ import { exit } from "@tauri-apps/api/process";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/api/dialog";
 import { readBinaryFile } from "@tauri-apps/api/fs";
+import ReactMarkdown from "react-markdown";
 import {
   loadSettings, saveSettings,
   loadChatSize, saveChatSize,
@@ -27,9 +28,14 @@ interface Props {
   currentImage: string | null;
   charSize: number;
   onSizeChange: (size: number) => void;
+  onToggleVisible: () => void;
 }
 
 let msgId = 0;
+
+// How many recent messages to pass as context (user+assistant pairs).
+// Keeps token usage low: 3 pairs = up to 6 messages.
+const CONTEXT_WINDOW = 6;
 
 function formatSessionDate(timestamp: number): string {
   const d = new Date(timestamp);
@@ -40,8 +46,10 @@ function formatSessionDate(timestamp: number): string {
   return `${mo}/${da} ${hh}:${mm}`;
 }
 
-export default function ChatWindow({ chatOpen, characterPosition, onClose, onImageChange, currentImage, charSize, onSizeChange }: Props) {
-  // On first mount: move the previous session into session history, start fresh
+export default function ChatWindow({
+  chatOpen, characterPosition, onClose, onImageChange,
+  currentImage, charSize, onSizeChange, onToggleVisible,
+}: Props) {
   const [sessions, setSessions] = useState<Session[]>(() => {
     const prev = popCurrentSession();
     const existing = loadSessions();
@@ -64,13 +72,13 @@ export default function ChatWindow({ chatOpen, characterPosition, onClose, onIma
   const [chatWidth, setChatWidth] = useState(savedChatSize.width);
   const [chatHeight, setChatHeight] = useState(savedChatSize.height);
 
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
 
   useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+    if (chatOpen) inputRef.current?.focus();
+  }, [chatOpen]);
 
   useEffect(() => {
     if (logRef.current) {
@@ -78,7 +86,6 @@ export default function ChatWindow({ chatOpen, characterPosition, onClose, onIma
     }
   }, [messages]);
 
-  // Continuously save current session so app-close preserves it
   useEffect(() => {
     const toSave = messages.filter((m) => !m.streaming);
     saveCurrentSession(toSave);
@@ -91,6 +98,14 @@ export default function ChatWindow({ chatOpen, characterPosition, onClose, onIma
   useEffect(() => {
     saveChatSize({ width: chatWidth, height: chatHeight });
   }, [chatWidth, chatHeight]);
+
+  // Listen for global shortcut toggle from Rust
+  useEffect(() => {
+    const unlisten = listen("toggle-visibility", () => {
+      onToggleVisible();
+    });
+    return () => { unlisten.then((f) => f()); };
+  }, [onToggleVisible]);
 
   // Stream events from Rust backend
   useEffect(() => {
@@ -119,7 +134,7 @@ export default function ChatWindow({ chatOpen, characterPosition, onClose, onIma
       setIsLoading(false);
       setMessages((prev) => {
         const filtered = prev[prev.length - 1]?.streaming ? prev.slice(0, -1) : prev;
-        return [...filtered, { id: ++msgId, role: "error", content: `エラー: ${event.payload}` }];
+        return [...filtered, { id: ++msgId, role: "error", content: event.payload }];
       });
     });
 
@@ -137,6 +152,12 @@ export default function ChatWindow({ chatOpen, characterPosition, onClose, onIma
     setInput("");
     setIsLoading(true);
 
+    // Build context: last CONTEXT_WINDOW non-streaming, non-error messages
+    const contextMessages = messages
+      .filter((m) => !m.streaming && m.role !== "error")
+      .slice(-CONTEXT_WINDOW)
+      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
     setMessages((prev) => [
       ...prev,
       { id: ++msgId, role: "user", content: text },
@@ -146,6 +167,7 @@ export default function ChatWindow({ chatOpen, characterPosition, onClose, onIma
     try {
       await invoke("send_to_claude", {
         message: text,
+        context: contextMessages,
         workingDir: workingDir || null,
         autoPermissions,
       });
@@ -156,13 +178,14 @@ export default function ChatWindow({ chatOpen, characterPosition, onClose, onIma
         return [...filtered, { id: ++msgId, role: "error", content: `起動エラー: ${String(e)}` }];
       });
     }
-  }, [input, isLoading, workingDir, autoPermissions]);
+  }, [input, isLoading, messages, workingDir, autoPermissions]);
+
+  const handleStop = useCallback(async () => {
+    await invoke("stop_claude").catch(() => {});
+  }, []);
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      // Use nativeEvent.isComposing (reliable on macOS WebKit) instead of the ref.
-      // On macOS, compositionend fires before keydown, so the ref is already false
-      // when the confirming Enter keydown arrives — nativeEvent.isComposing is not.
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
         sendMessage();
@@ -171,6 +194,14 @@ export default function ChatWindow({ chatOpen, characterPosition, onClose, onIma
     },
     [sendMessage, onClose]
   );
+
+  // Auto-resize textarea
+  const handleInput = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    const el = e.target;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, []);
 
   const pickImage = useCallback(async () => {
     try {
@@ -206,7 +237,6 @@ export default function ChatWindow({ chatOpen, characterPosition, onClose, onIma
   }, []);
 
   const clearHistory = useCallback(() => {
-    // Save current messages as a session before clearing
     const filtered = messages.filter((m) => !m.streaming);
     if (filtered.length > 0) {
       const newSession: Session = { id: Date.now(), timestamp: Date.now(), messages: filtered };
@@ -398,8 +428,17 @@ export default function ChatWindow({ chatOpen, characterPosition, onClose, onIma
           {messages.map((msg) => (
             <div key={msg.id} className={`chat-msg chat-msg--${msg.role}`}>
               <div className="chat-msg-content">
-                <pre>{msg.content}</pre>
-                {msg.streaming && <span className="cursor-blink">▋</span>}
+                {msg.role === "assistant" ? (
+                  <>
+                    <ReactMarkdown className="markdown">{msg.content}</ReactMarkdown>
+                    {msg.streaming && <span className="cursor-blink">▋</span>}
+                  </>
+                ) : (
+                  <>
+                    <pre>{msg.content}</pre>
+                    {msg.streaming && <span className="cursor-blink">▋</span>}
+                  </>
+                )}
               </div>
             </div>
           ))}
@@ -407,21 +446,27 @@ export default function ChatWindow({ chatOpen, characterPosition, onClose, onIma
 
         {/* Input */}
         <div className="chat-input-area">
-          <input
+          <textarea
             ref={inputRef}
-            type="text"
             className="chat-input"
-            placeholder={isLoading ? "考え中…" : "メッセージを入力（Enter送信）"}
+            placeholder={isLoading ? "考え中…" : "メッセージを入力（Enter送信 / Shift+Enter改行）"}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInput}
             onKeyDown={handleKeyDown}
             onCompositionStart={() => { isComposingRef.current = true; }}
             onCompositionEnd={() => { isComposingRef.current = false; }}
             disabled={isLoading}
+            rows={1}
           />
-          <button className="btn-send" onClick={sendMessage} disabled={isLoading || !input.trim()}>
-            {isLoading ? "…" : "➤"}
-          </button>
+          {isLoading ? (
+            <button className="btn-stop" onClick={handleStop} title="中断">
+              ■
+            </button>
+          ) : (
+            <button className="btn-send" onClick={sendMessage} disabled={!input.trim()}>
+              ➤
+            </button>
+          )}
         </div>
       </div>
     </div>

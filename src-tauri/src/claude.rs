@@ -1,15 +1,25 @@
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
+use std::sync::Mutex;
 use std::thread;
 use tauri::{AppHandle, Manager};
+
+/// Holds the PID of the currently running Claude process so it can be killed.
+static CURRENT_PID: Mutex<Option<u32>> = Mutex::new(None);
+
+#[derive(serde::Deserialize)]
+pub struct ContextMessage {
+    pub role: String,   // "user" | "assistant"
+    pub content: String,
+}
 
 /// Send a message to Claude Code CLI and stream the output back via Tauri events.
 ///
 /// Parameters:
 ///   message          – user's prompt
+///   context          – recent conversation messages for context (kept short to save tokens)
 ///   working_dir      – project directory to run Claude Code in (optional)
-///   auto_permissions – if true, adds --dangerously-skip-permissions so Claude
-///                      can edit files / run commands without asking
+///   auto_permissions – if true, adds --dangerously-skip-permissions
 ///
 /// Events emitted:
 ///   "claude-output" – streamed text chunks (String)
@@ -18,32 +28,75 @@ use tauri::{AppHandle, Manager};
 #[tauri::command]
 pub async fn send_to_claude(
     message: String,
+    context: Vec<ContextMessage>,
     working_dir: Option<String>,
     auto_permissions: bool,
     app: AppHandle,
 ) -> Result<(), String> {
     thread::spawn(move || {
-        run_claude(message, working_dir, auto_permissions, app);
+        run_claude(message, context, working_dir, auto_permissions, app);
     });
     Ok(())
 }
 
-/// Stop any running Claude process (placeholder for future process tracking)
+/// Kill the currently running Claude process if any.
 #[tauri::command]
 pub async fn stop_claude() -> Result<(), String> {
+    if let Ok(mut guard) = CURRENT_PID.lock() {
+        if let Some(pid) = guard.take() {
+            // SIGTERM on Unix
+            #[cfg(unix)]
+            unsafe {
+                libc::kill(pid as i32, libc::SIGTERM);
+            }
+            #[cfg(windows)]
+            {
+                let _ = Command::new("taskkill")
+                    .args(["/PID", &pid.to_string(), "/F"])
+                    .output();
+            }
+        }
+    }
     Ok(())
 }
 
-fn run_claude(message: String, working_dir: Option<String>, auto_permissions: bool, app: AppHandle) {
+fn run_claude(
+    message: String,
+    context: Vec<ContextMessage>,
+    working_dir: Option<String>,
+    auto_permissions: bool,
+    app: AppHandle,
+) {
     let claude_bin = match find_claude_binary() {
         Some(bin) => bin,
         None => {
             emit_error(
                 &app,
-                "claude コマンドが見つかりません。`npm install -g @anthropic-ai/claude-code` でインストールしてください。",
+                "claude コマンドが見つかりません。\
+                 ターミナルで `npm install -g @anthropic-ai/claude-code` を実行してください。",
             );
             return;
         }
+    };
+
+    // Build the full prompt: prepend recent conversation context to save tokens.
+    // Each assistant reply is truncated to 300 chars to avoid blowing up the context.
+    let full_message = if context.is_empty() {
+        message.clone()
+    } else {
+        let mut parts = String::from("【直近の会話】\n");
+        for msg in &context {
+            let role = if msg.role == "user" { "ユーザー" } else { "AI" };
+            let body: String = msg.content.chars().take(300).collect();
+            let truncated = if msg.content.chars().count() > 300 {
+                format!("{}…", body)
+            } else {
+                body
+            };
+            parts.push_str(&format!("{}: {}\n", role, truncated));
+        }
+        parts.push_str(&format!("\n【今回の質問】\n{}", message));
+        parts
     };
 
     let mut cmd = Command::new(&claude_bin);
@@ -52,15 +105,12 @@ fn run_claude(message: String, working_dir: Option<String>, auto_permissions: bo
     // launched from a macOS GUI app (which doesn't inherit the full shell PATH).
     cmd.env("PATH", build_extended_path());
 
-    // --print: non-interactive mode that still runs all tools (file edit, bash, etc.)
-    cmd.arg("--print").arg(&message);
+    cmd.arg("--print").arg(&full_message);
 
-    // Auto mode: skip all permission prompts so file edits / bash run automatically
     if auto_permissions {
         cmd.arg("--dangerously-skip-permissions");
     }
 
-    // Set working directory (the VSCode project root)
     if let Some(ref dir) = working_dir {
         let path = std::path::Path::new(dir);
         if path.is_dir() {
@@ -78,10 +128,15 @@ fn run_claude(message: String, working_dir: Option<String>, auto_permissions: bo
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
-            emit_error(&app, &format!("プロセス起動失敗: {}", e));
+            emit_error(&app, &format!("Claude の起動に失敗しました: {}", e));
             return;
         }
     };
+
+    // Store PID for stop_claude()
+    if let Ok(mut guard) = CURRENT_PID.lock() {
+        *guard = Some(child.id());
+    }
 
     // Stream stdout line by line → "claude-output" events
     if let Some(stdout) = child.stdout.take() {
@@ -109,15 +164,31 @@ fn run_claude(message: String, working_dir: Option<String>, auto_permissions: bo
         }
     }
 
+    // Clear PID
+    if let Ok(mut guard) = CURRENT_PID.lock() {
+        *guard = None;
+    }
+
     match child.wait() {
         Ok(status) if status.success() => {
             let _ = app.emit_all("claude-done", "");
         }
-        Ok(status) => {
+        Ok(_) if stderr_output.contains("interrupted") || stderr_output.is_empty() => {
+            // Killed by stop_claude — treat as done
+            let _ = app.emit_all("claude-done", "");
+        }
+        Ok(_) => {
             let msg = if !stderr_output.trim().is_empty() {
-                stderr_output.trim().to_string()
+                // Show stderr but cap length for readability
+                let trimmed = stderr_output.trim();
+                let capped: String = trimmed.chars().take(400).collect();
+                if trimmed.chars().count() > 400 {
+                    format!("{}…", capped)
+                } else {
+                    capped.to_string()
+                }
             } else {
-                format!("プロセスが終了コード {:?} で終了", status.code())
+                "Claude が予期せず終了しました。".to_string()
             };
             emit_error(&app, &msg);
         }

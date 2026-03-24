@@ -115,6 +115,13 @@ export default function App() {
     setChatOpen(false);
   }, []);
 
+  const handleToggleVisible = useCallback(() => {
+    setVisible((v) => {
+      if (v) setChatOpen(false);
+      return !v;
+    });
+  }, []);
+
   const handleImageChange = useCallback((dataUrl: string | null) => {
     setCharacterImage(dataUrl);
     if (dataUrl) saveCharacterImage(dataUrl);
@@ -146,6 +153,7 @@ export default function App() {
         currentImage={characterImage}
         charSize={charSize}
         onSizeChange={handleSizeChange}
+        onToggleVisible={handleToggleVisible}
       />
     </div>
   );

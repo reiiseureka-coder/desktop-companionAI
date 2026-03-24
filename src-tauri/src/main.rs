@@ -3,7 +3,7 @@
 
 mod claude;
 
-use tauri::Manager;
+use tauri::{GlobalShortcutManager, Manager};
 
 #[tauri::command]
 fn set_cursor_passthrough(window: tauri::Window, passthrough: bool) -> Result<(), String> {
@@ -30,8 +30,7 @@ fn main() {
                     let _ = window.set_position(tauri::LogicalPosition::new(0.0, 0.0));
                 }
 
-                // macOS: disable the system window shadow that appears as a black
-                // border around content rendered in a transparent window
+                // macOS: disable the system window shadow
                 #[cfg(target_os = "macos")]
                 {
                     use objc::{msg_send, sel, sel_impl, runtime::Object};
@@ -40,7 +39,16 @@ fn main() {
                         unsafe { let _: () = msg_send![ns_win, setHasShadow: false]; }
                     }
                 }
+
+                // Global shortcut: Cmd+Shift+Space → toggle visibility
+                let win_clone = window.clone();
+                app.global_shortcut_manager()
+                    .register("CmdOrCtrl+Shift+Space", move || {
+                        let _ = win_clone.emit("toggle-visibility", ());
+                    })
+                    .unwrap_or_else(|e| eprintln!("shortcut register failed: {}", e));
             }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

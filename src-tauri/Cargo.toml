@@ -29,9 +29,11 @@ tauri = { version = "1.6", features = [
   "dialog-open",
   "fs-all",
   "path-all",
-  "macos-private-api"
+  "macos-private-api",
+  "global-shortcut-all"
 ] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
+libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2"

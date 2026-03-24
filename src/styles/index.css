@@ -458,19 +458,25 @@ html, body {
   background: #fafaff;
   border-top: 1px solid rgba(124, 111, 247, 0.08);
   flex-shrink: 0;
+  align-items: flex-end;
 }
 
 .chat-input {
   flex: 1;
   background: white;
   border: 1.5px solid rgba(124, 111, 247, 0.22);
-  border-radius: 20px;
+  border-radius: 14px;
   padding: 8px 14px;
   color: #2d2040;
   font-size: 13px;
   font-family: inherit;
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
+  resize: none;
+  overflow-y: auto;
+  line-height: 1.5;
+  min-height: 36px;
+  max-height: 120px;
 }
 
 .chat-input:focus {
@@ -501,6 +507,7 @@ html, body {
   align-items: center;
   justify-content: center;
   min-width: 40px;
+  flex-shrink: 0;
 }
 
 .btn-send:hover:not(:disabled) {
@@ -511,4 +518,99 @@ html, body {
 .btn-send:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+.btn-stop {
+  background: rgba(220, 60, 60, 0.15);
+  border: 1.5px solid rgba(220, 60, 60, 0.3);
+  border-radius: 20px;
+  color: #c03050;
+  padding: 8px 13px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  flex-shrink: 0;
+}
+
+.btn-stop:hover {
+  background: rgba(220, 60, 60, 0.28);
+}
+
+/* ===== Markdown rendering ===== */
+.markdown {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #2d2040;
+  word-break: break-word;
+}
+
+.markdown p {
+  margin: 0 0 6px;
+}
+.markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown h1, .markdown h2, .markdown h3 {
+  font-size: 13px;
+  font-weight: 700;
+  margin: 8px 0 4px;
+}
+
+.markdown ul, .markdown ol {
+  padding-left: 18px;
+  margin: 4px 0;
+}
+
+.markdown li {
+  margin: 2px 0;
+}
+
+.markdown code {
+  background: rgba(124, 111, 247, 0.1);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: "SF Mono", Menlo, Monaco, monospace;
+  font-size: 12px;
+  color: #5a3fa0;
+}
+
+.markdown pre {
+  background: #f0eeff;
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 6px 0;
+}
+
+.markdown pre code {
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  color: #3a2a70;
+}
+
+.markdown blockquote {
+  border-left: 3px solid rgba(124, 111, 247, 0.4);
+  margin: 6px 0;
+  padding-left: 10px;
+  color: #7060a0;
+}
+
+.markdown a {
+  color: #7c6ff7;
+  text-decoration: underline;
+}
+
+.markdown strong {
+  font-weight: 700;
+}
+
+.markdown em {
+  font-style: italic;
 }
