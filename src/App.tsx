@@ -7,10 +7,10 @@ import { loadPosition, savePosition, loadCharacterImage, saveCharacterImage, cle
 export default function App() {
   const [chatOpen, setChatOpen] = useState(false);
   const [visible, setVisible] = useState(true);
-  // Default: bottom-right corner
+  // Default: bottom-right, with some margin from the edges
   const [position, setPosition] = useState({
-    x: window.innerWidth - 100,
-    y: window.innerHeight - 100,
+    x: window.innerWidth - 180,
+    y: window.innerHeight - 180,
   });
   const [characterImage, setCharacterImage] = useState<string | null>(() => loadCharacterImage());
   const [charSize, setCharSize] = useState<number>(() => loadCharacterSize());
