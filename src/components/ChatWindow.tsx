@@ -4,7 +4,13 @@ import { exit } from "@tauri-apps/api/process";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/api/dialog";
 import { readBinaryFile } from "@tauri-apps/api/fs";
-import { loadHistory, saveHistory, loadSettings, saveSettings, loadChatSize, saveChatSize } from "../utils/storage";
+import {
+  loadSettings, saveSettings,
+  loadChatSize, saveChatSize,
+  saveCurrentSession, popCurrentSession,
+  loadSessions, saveSessions,
+  Session,
+} from "../utils/storage";
 
 interface Message {
   id: number;
@@ -22,11 +28,29 @@ interface Props {
   onSizeChange: (size: number) => void;
 }
 
-const MAX_HISTORY = 20;
 let msgId = 0;
 
+function formatSessionDate(timestamp: number): string {
+  const d = new Date(timestamp);
+  const mo = d.getMonth() + 1;
+  const da = d.getDate();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${mo}/${da} ${hh}:${mm}`;
+}
+
 export default function ChatWindow({ characterPosition, onClose, onImageChange, currentImage, charSize, onSizeChange }: Props) {
-  const [messages, setMessages] = useState<Message[]>(() => loadHistory());
+  // On first mount: move the previous session into session history, start fresh
+  const [sessions, setSessions] = useState<Session[]>(() => {
+    const prev = popCurrentSession();
+    const existing = loadSessions();
+    if (prev.length === 0) return existing;
+    const newSessions = [...existing, { id: Date.now(), timestamp: Date.now(), messages: prev }].slice(-3);
+    saveSessions(newSessions);
+    return newSessions;
+  });
+
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -52,9 +76,10 @@ export default function ChatWindow({ characterPosition, onClose, onImageChange, 
     }
   }, [messages]);
 
+  // Continuously save current session so app-close preserves it
   useEffect(() => {
-    const toSave = messages.filter((m) => !m.streaming).slice(-MAX_HISTORY);
-    saveHistory(toSave);
+    const toSave = messages.filter((m) => !m.streaming);
+    saveCurrentSession(toSave);
   }, [messages]);
 
   useEffect(() => {
@@ -133,7 +158,7 @@ export default function ChatWindow({ characterPosition, onClose, onImageChange, 
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
         sendMessage();
       }
@@ -176,14 +201,28 @@ export default function ChatWindow({ characterPosition, onClose, onImageChange, 
   }, []);
 
   const clearHistory = useCallback(() => {
+    // Save current messages as a session before clearing
+    const filtered = messages.filter((m) => !m.streaming);
+    if (filtered.length > 0) {
+      const newSession: Session = { id: Date.now(), timestamp: Date.now(), messages: filtered };
+      setSessions((prev) => {
+        const updated = [...prev, newSession].slice(-3);
+        saveSessions(updated);
+        return updated;
+      });
+    }
     setMessages([]);
-    saveHistory([]);
+    saveCurrentSession([]);
+  }, [messages]);
+
+  const restoreSession = useCallback((session: Session) => {
+    setMessages(session.messages.map((m) => ({ ...m, streaming: false })));
+    saveCurrentSession(session.messages);
+    setShowSettings(false);
   }, []);
 
   const dirName = workingDir ? workingDir.split("/").pop() || workingDir : null;
 
-  // Character is at absolute (characterPosition.x, characterPosition.y) from top-left
-  // Bubble appears above the character, right-aligned to character's right edge
   const GAP = 12;
   const bubbleLeft = Math.max(8, Math.min(
     characterPosition.x + charSize - chatWidth,
@@ -311,6 +350,23 @@ export default function ChatWindow({ characterPosition, onClose, onImageChange, 
                 </div>
               )}
             </div>
+            {sessions.length > 0 && (
+              <div className="settings-row">
+                <span className="settings-label">過去の会話</span>
+                <div className="session-list">
+                  {sessions.slice().reverse().map((s) => {
+                    const userCount = s.messages.filter((m) => m.role === "user").length;
+                    const preview = s.messages.find((m) => m.role === "user")?.content.slice(0, 20) || "";
+                    return (
+                      <button key={s.id} className="btn-session" onClick={() => restoreSession(s)}>
+                        <span className="btn-session-date">{formatSessionDate(s.timestamp)}</span>
+                        <span className="btn-session-preview">「{preview}…」({userCount}件)</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

@@ -31,7 +31,7 @@ tauri = { version = "1.6", features = [
   "path-all",
   "macos-private-api"
 ] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
 
 [features]
 # This feature is used for production builds or when a dev server is not specified

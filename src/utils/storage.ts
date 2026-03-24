@@ -1,9 +1,10 @@
 const POSITION_KEY = "companion_position";
-const HISTORY_KEY = "companion_history";
 const SETTINGS_KEY = "companion_settings";
 const IMAGE_KEY = "companion_image";
 const SIZE_KEY = "companion_size";
 const CHAT_SIZE_KEY = "companion_chat_size";
+const CURRENT_SESSION_KEY = "companion_current_session";
+const SESSIONS_KEY = "companion_sessions";
 
 export interface CompanionSettings {
   workingDir: string;
@@ -35,6 +36,17 @@ export interface StoredMessage {
   id: number;
   role: "user" | "assistant" | "error";
   content: string;
+}
+
+export interface Session {
+  id: number;
+  timestamp: number;
+  messages: StoredMessage[];
+}
+
+export interface ChatSize {
+  width: number;
+  height: number;
 }
 
 export function savePosition(x: number, y: number): void {
@@ -90,11 +102,6 @@ export function loadCharacterSize(): number {
   }
 }
 
-export interface ChatSize {
-  width: number;
-  height: number;
-}
-
 export function saveChatSize(size: ChatSize): void {
   try {
     localStorage.setItem(CHAT_SIZE_KEY, JSON.stringify(size));
@@ -111,17 +118,40 @@ export function loadChatSize(): ChatSize {
   }
 }
 
-export function saveHistory(messages: StoredMessage[]): void {
+/** Save messages for the current running session (updated continuously). */
+export function saveCurrentSession(messages: StoredMessage[]): void {
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(messages.slice(-20)));
+    localStorage.setItem(CURRENT_SESSION_KEY, JSON.stringify(messages));
   } catch (_) {}
 }
 
-export function loadHistory(): StoredMessage[] {
+/**
+ * On app launch: load the previous session's messages and delete them from
+ * localStorage so the next launch starts fresh.
+ */
+export function popCurrentSession(): StoredMessage[] {
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
+    const raw = localStorage.getItem(CURRENT_SESSION_KEY);
+    localStorage.removeItem(CURRENT_SESSION_KEY);
     if (!raw) return [];
     return JSON.parse(raw) as StoredMessage[];
+  } catch (_) {
+    return [];
+  }
+}
+
+/** Persist the last 3 sessions (oldest first). */
+export function saveSessions(sessions: Session[]): void {
+  try {
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions.slice(-3)));
+  } catch (_) {}
+}
+
+export function loadSessions(): Session[] {
+  try {
+    const raw = localStorage.getItem(SESSIONS_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as Session[];
   } catch (_) {
     return [];
   }

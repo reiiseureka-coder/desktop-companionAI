@@ -51,6 +51,9 @@ html, body {
 .chat-bubble {
   position: fixed;
   z-index: 999;
+  background: transparent;
+  border: none;
+  outline: none;
   /* Position is set via inline style, relative to character */
   animation: bubblePop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
   transform-origin: bottom right;
@@ -88,7 +91,10 @@ html, body {
   max-height: 460px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 6px 24px rgba(80, 60, 140, 0.18);
+  box-shadow: 0 6px 24px rgba(80, 60, 140, 0.2);
+  /* Force GPU compositing to prevent WebKit border-radius dark-edge artifact */
+  -webkit-backface-visibility: hidden;
+  transform: translateZ(0);
 }
 
 /* ===== Bubble Header ===== */
@@ -281,6 +287,44 @@ html, body {
   width: 100%;
   accent-color: #7c6ff7;
   cursor: pointer;
+}
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.btn-session {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: white;
+  border: 1px solid rgba(124, 111, 247, 0.2);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+  width: 100%;
+}
+.btn-session:hover {
+  background: #f0eeff;
+  border-color: rgba(124, 111, 247, 0.4);
+}
+
+.btn-session-date {
+  font-size: 10px;
+  color: #9b87e8;
+  font-weight: 700;
+}
+
+.btn-session-preview {
+  font-size: 11px;
+  color: #5a4a9a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-warn {
