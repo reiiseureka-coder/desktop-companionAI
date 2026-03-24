@@ -138,16 +138,15 @@ export default function App() {
         imageSrc={characterImage}
         charSize={charSize}
       />
-      {chatOpen && (
-        <ChatWindow
-          characterPosition={position}
-          onClose={handleClose}
-          onImageChange={handleImageChange}
-          currentImage={characterImage}
-          charSize={charSize}
-          onSizeChange={handleSizeChange}
-        />
-      )}
+      <ChatWindow
+        chatOpen={chatOpen}
+        characterPosition={position}
+        onClose={handleClose}
+        onImageChange={handleImageChange}
+        currentImage={characterImage}
+        charSize={charSize}
+        onSizeChange={handleSizeChange}
+      />
     </div>
   );
 }

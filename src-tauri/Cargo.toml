@@ -33,6 +33,9 @@ tauri = { version = "1.6", features = [
 ] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc = "0.2"
+
 [features]
 # This feature is used for production builds or when a dev server is not specified
 # DO NOT REMOVE!!

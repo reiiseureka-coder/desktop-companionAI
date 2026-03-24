@@ -29,6 +29,17 @@ fn main() {
                     let _ = window.set_size(tauri::LogicalSize::new(logical_w, logical_h));
                     let _ = window.set_position(tauri::LogicalPosition::new(0.0, 0.0));
                 }
+
+                // macOS: disable the system window shadow that appears as a black
+                // border around content rendered in a transparent window
+                #[cfg(target_os = "macos")]
+                {
+                    use objc::{msg_send, sel, sel_impl, runtime::Object};
+                    if let Ok(ptr) = window.ns_window() {
+                        let ns_win = ptr as *mut Object;
+                        unsafe { let _: () = msg_send![ns_win, setHasShadow: false]; }
+                    }
+                }
             }
             Ok(())
         })

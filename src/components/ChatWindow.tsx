@@ -20,6 +20,7 @@ interface Message {
 }
 
 interface Props {
+  chatOpen: boolean;
   characterPosition: { x: number; y: number };
   onClose: () => void;
   onImageChange: (dataUrl: string | null) => void;
@@ -39,7 +40,7 @@ function formatSessionDate(timestamp: number): string {
   return `${mo}/${da} ${hh}:${mm}`;
 }
 
-export default function ChatWindow({ characterPosition, onClose, onImageChange, currentImage, charSize, onSizeChange }: Props) {
+export default function ChatWindow({ chatOpen, characterPosition, onClose, onImageChange, currentImage, charSize, onSizeChange }: Props) {
   // On first mount: move the previous session into session history, start fresh
   const [sessions, setSessions] = useState<Session[]>(() => {
     const prev = popCurrentSession();
@@ -65,6 +66,7 @@ export default function ChatWindow({ characterPosition, onClose, onImageChange, 
 
   const inputRef = useRef<HTMLInputElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
+  const isComposingRef = useRef(false);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -158,7 +160,7 @@ export default function ChatWindow({ characterPosition, onClose, onImageChange, 
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      if (e.key === "Enter" && !e.shiftKey && !isComposingRef.current) {
         e.preventDefault();
         sendMessage();
       }
@@ -233,7 +235,12 @@ export default function ChatWindow({ characterPosition, onClose, onImageChange, 
   return (
     <div
       className="chat-bubble"
-      style={{ left: `${bubbleLeft}px`, bottom: `${bubbleBottom}px`, width: `${chatWidth}px` }}
+      style={{
+        left: `${bubbleLeft}px`,
+        bottom: `${bubbleBottom}px`,
+        width: `${chatWidth}px`,
+        display: chatOpen ? "block" : "none",
+      }}
     >
       <div className="bubble-content" style={{ maxHeight: `${chatHeight}px` }}>
         {/* Header */}
@@ -405,6 +412,8 @@ export default function ChatWindow({ characterPosition, onClose, onImageChange, 
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            onCompositionStart={() => { isComposingRef.current = true; }}
+            onCompositionEnd={() => { isComposingRef.current = false; }}
             disabled={isLoading}
           />
           <button className="btn-send" onClick={sendMessage} disabled={isLoading || !input.trim()}>
