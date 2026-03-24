@@ -160,7 +160,10 @@ export default function ChatWindow({ chatOpen, characterPosition, onClose, onIma
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter" && !e.shiftKey && !isComposingRef.current) {
+      // Use nativeEvent.isComposing (reliable on macOS WebKit) instead of the ref.
+      // On macOS, compositionend fires before keydown, so the ref is already false
+      // when the confirming Enter keydown arrives — nativeEvent.isComposing is not.
+      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
         sendMessage();
       }

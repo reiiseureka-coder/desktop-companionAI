@@ -71,6 +71,8 @@ html, body {
 }
 
 /* Bubble tail — pointing down toward the character */
+/* Use rgba(0,0,0,0) instead of 'transparent': on macOS transparent windows,
+   WebKit can render CSS 'transparent' as black in border-trick triangles. */
 .chat-bubble::after {
   content: '';
   position: absolute;
@@ -78,8 +80,8 @@ html, body {
   right: 28px;
   width: 0;
   height: 0;
-  border-left: 10px solid transparent;
-  border-right: 10px solid transparent;
+  border-left: 10px solid rgba(0, 0, 0, 0);
+  border-right: 10px solid rgba(0, 0, 0, 0);
   border-top: 13px solid #fafaff;
 }
 
