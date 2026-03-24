@@ -3,6 +3,7 @@ const HISTORY_KEY = "companion_history";
 const SETTINGS_KEY = "companion_settings";
 const IMAGE_KEY = "companion_image";
 const SIZE_KEY = "companion_size";
+const CHAT_SIZE_KEY = "companion_chat_size";
 
 export interface CompanionSettings {
   workingDir: string;
@@ -86,6 +87,27 @@ export function loadCharacterSize(): number {
     return isNaN(n) ? 80 : n;
   } catch (_) {
     return 80;
+  }
+}
+
+export interface ChatSize {
+  width: number;
+  height: number;
+}
+
+export function saveChatSize(size: ChatSize): void {
+  try {
+    localStorage.setItem(CHAT_SIZE_KEY, JSON.stringify(size));
+  } catch (_) {}
+}
+
+export function loadChatSize(): ChatSize {
+  try {
+    const raw = localStorage.getItem(CHAT_SIZE_KEY);
+    if (!raw) return { width: 340, height: 460 };
+    return JSON.parse(raw) as ChatSize;
+  } catch (_) {
+    return { width: 340, height: 460 };
   }
 }
 

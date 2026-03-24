@@ -48,6 +48,10 @@ fn run_claude(message: String, working_dir: Option<String>, auto_permissions: bo
 
     let mut cmd = Command::new(&claude_bin);
 
+    // Extend PATH so the claude Node.js script can find `node` even when
+    // launched from a macOS GUI app (which doesn't inherit the full shell PATH).
+    cmd.env("PATH", build_extended_path());
+
     // --print: non-interactive mode that still runs all tools (file edit, bash, etc.)
     cmd.arg("--print").arg(&message);
 
@@ -127,9 +131,51 @@ fn emit_error(app: &AppHandle, msg: &str) {
     let _ = app.emit_all("claude-error", msg.to_string());
 }
 
+/// Build an extended PATH that includes common Node.js binary locations.
+/// macOS GUI apps don't inherit the full shell PATH, so node/claude may not be found.
+fn build_extended_path() -> String {
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    let home = std::env::var("HOME").unwrap_or_default();
+
+    let mut extra_dirs = vec![
+        "/opt/homebrew/bin".to_string(),
+        "/opt/homebrew/sbin".to_string(),
+        "/usr/local/bin".to_string(),
+        format!("{}/.npm-global/bin", home),
+        format!("{}/node_modules/.bin", home),
+        format!("{}/.local/bin", home),
+    ];
+
+    // Add any nvm-managed node versions
+    let nvm_node_dir = format!("{}/.nvm/versions/node", home);
+    if let Ok(entries) = std::fs::read_dir(&nvm_node_dir) {
+        for entry in entries.flatten() {
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                extra_dirs.push(format!("{}/bin", entry.path().display()));
+            }
+        }
+    }
+
+    // Also check ~/.nvm/alias/default symlink
+    let nvm_default = format!("{}/.nvm/alias/default", home);
+    if let Ok(version) = std::fs::read_to_string(&nvm_default) {
+        let version = version.trim();
+        extra_dirs.push(format!("{}/.nvm/versions/node/{}/bin", home, version));
+    }
+
+    format!("{}:{}", current_path, extra_dirs.join(":"))
+}
+
 fn find_claude_binary() -> Option<String> {
-    // Check PATH via `which`
-    if let Ok(output) = Command::new("which").arg("claude").output() {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let extended_path = build_extended_path();
+
+    // Check via `which` with extended PATH
+    if let Ok(output) = Command::new("which")
+        .arg("claude")
+        .env("PATH", &extended_path)
+        .output()
+    {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !path.is_empty() {
@@ -139,7 +185,6 @@ fn find_claude_binary() -> Option<String> {
     }
 
     // Fallback: common macOS install locations
-    let home = std::env::var("HOME").unwrap_or_default();
     let candidates = [
         "/usr/local/bin/claude".to_string(),
         "/opt/homebrew/bin/claude".to_string(),

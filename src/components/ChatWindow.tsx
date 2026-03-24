@@ -4,7 +4,7 @@ import { exit } from "@tauri-apps/api/process";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/api/dialog";
 import { readBinaryFile } from "@tauri-apps/api/fs";
-import { loadHistory, saveHistory, loadSettings, saveSettings } from "../utils/storage";
+import { loadHistory, saveHistory, loadSettings, saveSettings, loadChatSize, saveChatSize } from "../utils/storage";
 
 interface Message {
   id: number;
@@ -35,6 +35,10 @@ export default function ChatWindow({ characterPosition, onClose, onImageChange, 
   const [workingDir, setWorkingDir] = useState(savedSettings.workingDir);
   const [autoPermissions, setAutoPermissions] = useState(savedSettings.autoPermissions);
 
+  const savedChatSize = loadChatSize();
+  const [chatWidth, setChatWidth] = useState(savedChatSize.width);
+  const [chatHeight, setChatHeight] = useState(savedChatSize.height);
+
   const inputRef = useRef<HTMLInputElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -56,6 +60,10 @@ export default function ChatWindow({ characterPosition, onClose, onImageChange, 
   useEffect(() => {
     saveSettings({ workingDir, autoPermissions });
   }, [workingDir, autoPermissions]);
+
+  useEffect(() => {
+    saveChatSize({ width: chatWidth, height: chatHeight });
+  }, [chatWidth, chatHeight]);
 
   // Stream events from Rust backend
   useEffect(() => {
@@ -176,20 +184,19 @@ export default function ChatWindow({ characterPosition, onClose, onImageChange, 
 
   // Character is at absolute (characterPosition.x, characterPosition.y) from top-left
   // Bubble appears above the character, right-aligned to character's right edge
-  const BUBBLE_W = 340;
   const GAP = 12;
   const bubbleLeft = Math.max(8, Math.min(
-    characterPosition.x + charSize - BUBBLE_W,
-    window.innerWidth - BUBBLE_W - 8
+    characterPosition.x + charSize - chatWidth,
+    window.innerWidth - chatWidth - 8
   ));
   const bubbleBottom = window.innerHeight - characterPosition.y + GAP;
 
   return (
     <div
       className="chat-bubble"
-      style={{ left: `${bubbleLeft}px`, bottom: `${bubbleBottom}px` }}
+      style={{ left: `${bubbleLeft}px`, bottom: `${bubbleBottom}px`, width: `${chatWidth}px` }}
     >
-      <div className="bubble-content">
+      <div className="bubble-content" style={{ maxHeight: `${chatHeight}px` }}>
         {/* Header */}
         <div className="bubble-header">
           <div className="bubble-header-title">
@@ -222,13 +229,35 @@ export default function ChatWindow({ characterPosition, onClose, onImageChange, 
         {showSettings && (
           <div className="settings-panel">
             <div className="settings-row">
-              <span className="settings-label">サイズ調整 ({charSize}px)</span>
+              <span className="settings-label">キャラクターサイズ ({charSize}px)</span>
               <input
                 type="range"
                 min={50}
                 max={200}
                 value={charSize}
                 onChange={(e) => onSizeChange(Number(e.target.value))}
+                className="settings-size-slider"
+              />
+            </div>
+            <div className="settings-row">
+              <span className="settings-label">チャット幅 ({chatWidth}px)</span>
+              <input
+                type="range"
+                min={280}
+                max={600}
+                value={chatWidth}
+                onChange={(e) => setChatWidth(Number(e.target.value))}
+                className="settings-size-slider"
+              />
+            </div>
+            <div className="settings-row">
+              <span className="settings-label">チャット高さ ({chatHeight}px)</span>
+              <input
+                type="range"
+                min={250}
+                max={700}
+                value={chatHeight}
+                onChange={(e) => setChatHeight(Number(e.target.value))}
                 className="settings-size-slider"
               />
             </div>

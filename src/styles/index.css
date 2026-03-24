@@ -50,13 +50,10 @@ html, body {
 /* ===== Speech Bubble (chat window) ===== */
 .chat-bubble {
   position: fixed;
-  width: 340px;
   z-index: 999;
   /* Position is set via inline style, relative to character */
   animation: bubblePop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
   transform-origin: bottom right;
-  /* Use filter drop-shadow so the tail is included */
-  filter: drop-shadow(0 6px 24px rgba(80, 60, 140, 0.18)) drop-shadow(0 2px 6px rgba(0,0,0,0.08));
 }
 
 @keyframes bubblePop {
@@ -91,6 +88,7 @@ html, body {
   max-height: 460px;
   display: flex;
   flex-direction: column;
+  box-shadow: 0 6px 24px rgba(80, 60, 140, 0.18);
 }
 
 /* ===== Bubble Header ===== */
