@@ -4,6 +4,7 @@ import { exit } from "@tauri-apps/api/process";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/api/dialog";
 import { readBinaryFile } from "@tauri-apps/api/fs";
+import { homeDir } from "@tauri-apps/api/path";
 import ReactMarkdown from "react-markdown";
 import {
   loadSettings, saveSettings,
@@ -86,6 +87,15 @@ export default function ChatWindow({
   const logRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
   const justEndedCompositionRef = useRef(false);
+  const homeDirRef = useRef<string>("");
+
+  // 作業ディレクトリ未設定ならホームディレクトリをデフォルトに
+  useEffect(() => {
+    homeDir().then((home) => {
+      homeDirRef.current = home;
+      if (!workingDir) setWorkingDir(home);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (chatOpen) inputRef.current?.focus();
@@ -290,7 +300,9 @@ export default function ChatWindow({
     setShowSettings(false);
   }, []);
 
-  const dirName = workingDir ? workingDir.split("/").pop() || workingDir : null;
+  const dirName = workingDir
+    ? (workingDir === homeDirRef.current ? "~" : workingDir.split("/").pop() || workingDir)
+    : null;
 
   const GAP = 12;
   const bubbleLeft = Math.max(8, Math.min(
@@ -399,8 +411,12 @@ export default function ChatWindow({
                 <button className="btn-pick" onClick={pickDirectory}>
                   選択
                 </button>
-                {workingDir && (
-                  <button className="btn-pick btn-pick--clear" onClick={() => setWorkingDir("")}>
+                {workingDir && workingDir !== homeDirRef.current && (
+                  <button
+                    className="btn-pick btn-pick--clear"
+                    title="ホームに戻す"
+                    onClick={() => setWorkingDir(homeDirRef.current)}
+                  >
                     ✕
                   </button>
                 )}
@@ -461,13 +477,13 @@ export default function ChatWindow({
         <div className="chat-log" ref={logRef}>
           {messages.length === 0 && (
             <div className="chat-empty">
-              {workingDir
-                ? `📂 ${dirName} について聞いてください`
-                : "何でも聞いてください！"}
-              {!workingDir && (
+              {workingDir === homeDirRef.current
+                ? "何でも聞いてください！"
+                : `📂 ${dirName} について聞いてください`}
+              {workingDir === homeDirRef.current && (
                 <div className="chat-empty-hint">
-                  ⚙ 設定からプロジェクトフォルダを指定すると<br />
-                  ファイルの読み書きができます
+                  ⚙ 設定でプロジェクトフォルダを指定すると<br />
+                  特定のプロジェクトに絞れます
                 </div>
               )}
             </div>
