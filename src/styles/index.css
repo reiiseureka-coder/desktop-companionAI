@@ -197,6 +197,10 @@ html, body {
   flex-direction: column;
   gap: 10px;
   flex-shrink: 0;
+  overflow-y: auto;
+  max-height: 55vh;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 111, 247, 0.25) transparent;
 }
 
 .settings-row {
