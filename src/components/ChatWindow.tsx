@@ -11,7 +11,7 @@ import {
   loadChatSize, saveChatSize,
   saveCurrentSession, popCurrentSession, peekCurrentSession,
   loadSessions, saveSessions,
-  Session, DEFAULT_SYSTEM_PROMPT,
+  Session, DEFAULT_SYSTEM_PROMPT, MODELS, ModelId,
 } from "../utils/storage";
 
 interface Message {
@@ -56,6 +56,7 @@ export default function ChatWindow({
   const [autoPermissions, setAutoPermissions] = useState(savedSettings.autoPermissions);
   const [resetOnOpen, setResetOnOpen] = useState(savedSettings.resetOnOpen);
   const [systemPrompt, setSystemPrompt] = useState(savedSettings.systemPrompt ?? DEFAULT_SYSTEM_PROMPT);
+  const [model, setModel] = useState<ModelId>(savedSettings.model);
 
   const [sessions, setSessions] = useState<Session[]>(() => {
     const existing = loadSessions();
@@ -132,8 +133,8 @@ export default function ChatWindow({
   }, [messages]);
 
   useEffect(() => {
-    saveSettings({ workingDir, autoPermissions, resetOnOpen, systemPrompt });
-  }, [workingDir, autoPermissions, resetOnOpen, systemPrompt]);
+    saveSettings({ workingDir, autoPermissions, resetOnOpen, systemPrompt, model });
+  }, [workingDir, autoPermissions, resetOnOpen, systemPrompt, model]);
 
   useEffect(() => {
     saveChatSize({ width: chatWidth, height: chatHeight });
@@ -211,6 +212,7 @@ export default function ChatWindow({
         workingDir: workingDir || null,
         autoPermissions,
         systemPrompt: systemPrompt.trim() || null,
+        model,
       });
     } catch (e) {
       setIsLoading(false);
@@ -403,6 +405,18 @@ export default function ChatWindow({
                   </button>
                 )}
               </div>
+            </div>
+            <div className="settings-row">
+              <span className="settings-label">AIモデル</span>
+              <select
+                className="settings-select"
+                value={model}
+                onChange={(e) => setModel(e.target.value as ModelId)}
+              >
+                {MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </select>
             </div>
             <div className="settings-row">
               <span className="settings-label">作業ディレクトリ</span>

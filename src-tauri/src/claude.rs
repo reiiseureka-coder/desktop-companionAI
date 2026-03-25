@@ -32,10 +32,11 @@ pub async fn send_to_claude(
     working_dir: Option<String>,
     auto_permissions: bool,
     system_prompt: Option<String>,
+    model: Option<String>,
     app: AppHandle,
 ) -> Result<(), String> {
     thread::spawn(move || {
-        run_claude(message, context, working_dir, auto_permissions, system_prompt, app);
+        run_claude(message, context, working_dir, auto_permissions, system_prompt, model, app);
     });
     Ok(())
 }
@@ -67,6 +68,7 @@ fn run_claude(
     working_dir: Option<String>,
     auto_permissions: bool,
     system_prompt: Option<String>,
+    model: Option<String>,
     app: AppHandle,
 ) {
     let claude_bin = match find_claude_binary() {
@@ -108,6 +110,12 @@ fn run_claude(
     cmd.env("PATH", build_extended_path());
 
     cmd.arg("--print").arg(&full_message);
+
+    if let Some(ref m) = model {
+        if !m.trim().is_empty() {
+            cmd.arg("--model").arg(m);
+        }
+    }
 
     if let Some(ref sp) = system_prompt {
         if !sp.trim().is_empty() {

@@ -12,11 +12,20 @@ export const DEFAULT_SYSTEM_PROMPT =
 コーディング・調査・ファイル操作など何でも手伝いますが、気軽な雑談にも応じてください。
 返答は簡潔に、必要なときだけ長く書いてください。`;
 
+export const MODELS = [
+  { id: "claude-sonnet-4-6",          label: "Sonnet 4.6（高性能）" },
+  { id: "claude-haiku-4-5-20251001",  label: "Haiku 4.5（軽量・低コスト）" },
+] as const;
+
+export type ModelId = typeof MODELS[number]["id"];
+export const DEFAULT_MODEL: ModelId = "claude-sonnet-4-6";
+
 export interface CompanionSettings {
   workingDir: string;
   autoPermissions: boolean;
   resetOnOpen: boolean;
   systemPrompt: string;
+  model: ModelId;
 }
 
 export function saveSettings(settings: CompanionSettings): void {
@@ -28,16 +37,17 @@ export function saveSettings(settings: CompanionSettings): void {
 export function loadSettings(): CompanionSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return { workingDir: "", autoPermissions: false, resetOnOpen: true, systemPrompt: DEFAULT_SYSTEM_PROMPT };
+    if (!raw) return { workingDir: "", autoPermissions: false, resetOnOpen: true, systemPrompt: DEFAULT_SYSTEM_PROMPT, model: DEFAULT_MODEL };
     const parsed = JSON.parse(raw) as Partial<CompanionSettings>;
     return {
       workingDir: parsed.workingDir ?? "",
       autoPermissions: parsed.autoPermissions ?? false,
       resetOnOpen: parsed.resetOnOpen ?? true,
       systemPrompt: parsed.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
+      model: parsed.model ?? DEFAULT_MODEL,
     };
   } catch (_) {
-    return { workingDir: "", autoPermissions: false, resetOnOpen: true, systemPrompt: DEFAULT_SYSTEM_PROMPT };
+    return { workingDir: "", autoPermissions: false, resetOnOpen: true, systemPrompt: DEFAULT_SYSTEM_PROMPT, model: DEFAULT_MODEL };
   }
 }
 
