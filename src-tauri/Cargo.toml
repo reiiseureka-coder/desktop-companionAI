@@ -29,8 +29,7 @@ tauri = { version = "1.6", features = [
   "dialog-open",
   "fs-all",
   "path-all",
-  "macos-private-api",
-  "global-shortcut-all"
+  "macos-private-api"
 ] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
 libc = "0.2"

@@ -3,7 +3,7 @@
 
 mod claude;
 
-use tauri::{GlobalShortcutManager, Manager};
+use tauri::Manager;
 
 #[tauri::command]
 fn set_cursor_passthrough(window: tauri::Window, passthrough: bool) -> Result<(), String> {
@@ -40,13 +40,6 @@ fn main() {
                     }
                 }
 
-                // Global shortcut: Cmd+Shift+Space → toggle visibility
-                let win_clone = window.clone();
-                app.global_shortcut_manager()
-                    .register("CmdOrCtrl+Shift+Space", move || {
-                        let _ = win_clone.emit("toggle-visibility", ());
-                    })
-                    .unwrap_or_else(|e| eprintln!("shortcut register failed: {}", e));
             }
 
             Ok(())
