@@ -446,7 +446,7 @@ export default function ChatWindow({
               <div className="chat-msg-content">
                 {msg.role === "assistant" ? (
                   <>
-                    <ReactMarkdown className="markdown">{msg.content}</ReactMarkdown>
+                    <div className="markdown"><ReactMarkdown>{msg.content}</ReactMarkdown></div>
                     {msg.streaming && <span className="cursor-blink">▋</span>}
                   </>
                 ) : (
