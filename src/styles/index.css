@@ -90,7 +90,7 @@ html, body {
   background: #fafaff;
   border-radius: 20px;
   overflow: hidden;
-  max-height: 460px;
+  max-height: min(460px, 80vh);
   display: flex;
   flex-direction: column;
   box-shadow: 0 6px 24px rgba(80, 60, 140, 0.2);
@@ -198,7 +198,7 @@ html, body {
   gap: 10px;
   flex-shrink: 0;
   overflow-y: auto;
-  max-height: 55vh;
+  max-height: 45vh;
   scrollbar-width: thin;
   scrollbar-color: rgba(124, 111, 247, 0.25) transparent;
 }
