@@ -52,11 +52,6 @@ export default function App() {
         passthroughTimer.current = null;
       }
 
-      if (chatOpenRef.current) {
-        setPassthrough(false);
-        return;
-      }
-
       const el = document.elementFromPoint(e.clientX, e.clientY);
       const isInteractive = el?.closest(".character, .chat-bubble") !== null;
 

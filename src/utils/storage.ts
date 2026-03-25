@@ -9,6 +9,7 @@ const SESSIONS_KEY = "companion_sessions";
 export interface CompanionSettings {
   workingDir: string;
   autoPermissions: boolean;
+  resetOnOpen: boolean;
 }
 
 export function saveSettings(settings: CompanionSettings): void {
@@ -20,10 +21,15 @@ export function saveSettings(settings: CompanionSettings): void {
 export function loadSettings(): CompanionSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return { workingDir: "", autoPermissions: false };
-    return JSON.parse(raw) as CompanionSettings;
+    if (!raw) return { workingDir: "", autoPermissions: false, resetOnOpen: true };
+    const parsed = JSON.parse(raw) as Partial<CompanionSettings>;
+    return {
+      workingDir: parsed.workingDir ?? "",
+      autoPermissions: parsed.autoPermissions ?? false,
+      resetOnOpen: parsed.resetOnOpen ?? true,
+    };
   } catch (_) {
-    return { workingDir: "", autoPermissions: false };
+    return { workingDir: "", autoPermissions: false, resetOnOpen: true };
   }
 }
 
@@ -133,6 +139,20 @@ export function popCurrentSession(): StoredMessage[] {
   try {
     const raw = localStorage.getItem(CURRENT_SESSION_KEY);
     localStorage.removeItem(CURRENT_SESSION_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as StoredMessage[];
+  } catch (_) {
+    return [];
+  }
+}
+
+/**
+ * Load the current session's messages without deleting them.
+ * Used when resetOnOpen=false to restore the session.
+ */
+export function peekCurrentSession(): StoredMessage[] {
+  try {
+    const raw = localStorage.getItem(CURRENT_SESSION_KEY);
     if (!raw) return [];
     return JSON.parse(raw) as StoredMessage[];
   } catch (_) {

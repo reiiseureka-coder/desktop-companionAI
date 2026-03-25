@@ -8,7 +8,7 @@ import ReactMarkdown from "react-markdown";
 import {
   loadSettings, saveSettings,
   loadChatSize, saveChatSize,
-  saveCurrentSession, popCurrentSession,
+  saveCurrentSession, popCurrentSession, peekCurrentSession,
   loadSessions, saveSessions,
   Session,
 } from "../utils/storage";
@@ -50,23 +50,33 @@ export default function ChatWindow({
   chatOpen, characterPosition, onClose, onImageChange,
   currentImage, charSize, onSizeChange, onToggleVisible,
 }: Props) {
+  const savedSettings = loadSettings();
+  const [workingDir, setWorkingDir] = useState(savedSettings.workingDir);
+  const [autoPermissions, setAutoPermissions] = useState(savedSettings.autoPermissions);
+  const [resetOnOpen, setResetOnOpen] = useState(savedSettings.resetOnOpen);
+
   const [sessions, setSessions] = useState<Session[]>(() => {
-    const prev = popCurrentSession();
     const existing = loadSessions();
+    if (!savedSettings.resetOnOpen) return existing;
+    // resetOnOpen=trueの場合：前回セッションを履歴に移して新規スタート
+    const prev = popCurrentSession();
     if (prev.length === 0) return existing;
     const newSessions = [...existing, { id: Date.now(), timestamp: Date.now(), messages: prev }].slice(-3);
     saveSessions(newSessions);
     return newSessions;
   });
 
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    // resetOnOpen=falseの場合は前回のセッションを復元
+    if (!savedSettings.resetOnOpen) {
+      const prev = peekCurrentSession();
+      return prev.map((m) => ({ ...m, streaming: false }));
+    }
+    return [];
+  });
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-
-  const savedSettings = loadSettings();
-  const [workingDir, setWorkingDir] = useState(savedSettings.workingDir);
-  const [autoPermissions, setAutoPermissions] = useState(savedSettings.autoPermissions);
 
   const savedChatSize = loadChatSize();
   const [chatWidth, setChatWidth] = useState(savedChatSize.width);
@@ -75,6 +85,7 @@ export default function ChatWindow({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
+  const justEndedCompositionRef = useRef(false);
 
   useEffect(() => {
     if (chatOpen) inputRef.current?.focus();
@@ -86,7 +97,10 @@ export default function ChatWindow({
     const el = inputRef.current;
     if (!el) return;
     const onStart = () => { isComposingRef.current = true; };
-    const onEnd = () => { isComposingRef.current = false; };
+    const onEnd = () => {
+      isComposingRef.current = false;
+      justEndedCompositionRef.current = true;
+    };
     el.addEventListener("compositionstart", onStart);
     el.addEventListener("compositionend", onEnd);
     return () => {
@@ -107,8 +121,8 @@ export default function ChatWindow({
   }, [messages]);
 
   useEffect(() => {
-    saveSettings({ workingDir, autoPermissions });
-  }, [workingDir, autoPermissions]);
+    saveSettings({ workingDir, autoPermissions, resetOnOpen });
+  }, [workingDir, autoPermissions, resetOnOpen]);
 
   useEffect(() => {
     saveChatSize({ width: chatWidth, height: chatHeight });
@@ -203,6 +217,10 @@ export default function ChatWindow({
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === "Enter" && !e.shiftKey) {
         if (isComposingRef.current) return; // IME入力中は無視
+        if (justEndedCompositionRef.current) {
+          justEndedCompositionRef.current = false;
+          return; // IME変換確定のEnterは送信しない
+        }
         e.preventDefault();
         sendMessage();
       }
@@ -405,6 +423,19 @@ export default function ChatWindow({
                   ⚠ ファイルが自動で変更される場合があります
                 </div>
               )}
+            </div>
+            <div className="settings-row">
+              <label className="settings-toggle">
+                <input
+                  type="checkbox"
+                  checked={resetOnOpen}
+                  onChange={(e) => setResetOnOpen(e.target.checked)}
+                />
+                <span>
+                  起動時にリセット
+                  <small>（OFFで前回の会話を引き継ぎ）</small>
+                </span>
+              </label>
             </div>
             {sessions.length > 0 && (
               <div className="settings-row">
