@@ -12,6 +12,28 @@ fn set_cursor_passthrough(window: tauri::Window, passthrough: bool) -> Result<()
         .map_err(|e| e.to_string())
 }
 
+/// Returns the current cursor position in macOS Cocoa screen coordinates
+/// (origin = bottom-left of primary display, in logical pixels / points).
+/// Returns (-1, -1) on non-macOS platforms.
+#[tauri::command]
+fn get_cursor_pos_native() -> (f64, f64) {
+    #[cfg(target_os = "macos")]
+    {
+        #[repr(C)]
+        #[derive(Copy, Clone)]
+        struct NSPoint { x: f64, y: f64 }
+
+        unsafe {
+            use objc::{msg_send, sel, sel_impl, class};
+            let cls = class!(NSEvent);
+            let p: NSPoint = msg_send![cls, mouseLocation];
+            (p.x, p.y)
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    { (-1.0, -1.0) }
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -48,6 +70,7 @@ fn main() {
             claude::send_to_claude,
             claude::stop_claude,
             set_cursor_passthrough,
+            get_cursor_pos_native,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

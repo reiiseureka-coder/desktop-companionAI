@@ -17,7 +17,6 @@ export default function App() {
 
   const chatOpenRef = useRef(false);
   const currentPassthrough = useRef(false);
-  const passthroughTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Apply size CSS variable on mount
   useEffect(() => {
@@ -38,7 +37,10 @@ export default function App() {
     chatOpenRef.current = chatOpen;
   }, [chatOpen]);
 
-  // Click-through: pass clicks to underlying apps when over transparent area
+  // Click-through: poll native cursor position every 50ms so we don't depend on
+  // mousemove (which is suppressed while ignore_cursor_events=true).
+  // Cocoa coords: origin = bottom-left of primary display, logical pixels.
+  // Web coords: origin = top-left. Conversion: webY = screen.height - cocoaY.
   useEffect(() => {
     const setPassthrough = (value: boolean) => {
       if (currentPassthrough.current === value) return;
@@ -46,32 +48,27 @@ export default function App() {
       invoke("set_cursor_passthrough", { passthrough: value }).catch(() => {});
     };
 
-    const handleMouseMove = (e: MouseEvent) => {
-      if (passthroughTimer.current) {
-        clearTimeout(passthroughTimer.current);
-        passthroughTimer.current = null;
-      }
+    // Start fully transparent so other apps are immediately usable.
+    setPassthrough(true);
 
-      const el = document.elementFromPoint(e.clientX, e.clientY);
-      const isInteractive = el?.closest(".character, .chat-bubble") !== null;
-
-      if (isInteractive) {
-        setPassthrough(false);
-      } else {
-        setPassthrough(true);
-        passthroughTimer.current = setTimeout(() => {
-          setPassthrough(false);
-        }, 80);
+    const poll = async () => {
+      try {
+        const [cocoaX, cocoaY] = await invoke<[number, number]>("get_cursor_pos_native");
+        if (cocoaX < 0) return; // sentinel: platform not supported
+        const webX = cocoaX;
+        const webY = window.screen.height - cocoaY;
+        const el = document.elementFromPoint(webX, webY);
+        const isInteractive = el?.closest(".character, .chat-bubble") !== null;
+        setPassthrough(!isInteractive);
+      } catch {
+        // ignore
       }
     };
 
-    window.addEventListener("mousemove", handleMouseMove);
-    invoke("set_cursor_passthrough", { passthrough: true }).catch(() => {});
-    currentPassthrough.current = true;
+    const intervalId = setInterval(poll, 50);
 
     return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      if (passthroughTimer.current) clearTimeout(passthroughTimer.current);
+      clearInterval(intervalId);
       invoke("set_cursor_passthrough", { passthrough: false }).catch(() => {});
     };
   }, []);
