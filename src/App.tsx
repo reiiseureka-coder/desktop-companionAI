@@ -5,7 +5,7 @@ import ChatWindow from "./components/ChatWindow";
 import { loadPosition, savePosition, loadCharacterImage, saveCharacterImage, clearCharacterImage, loadCharacterSize, saveCharacterSize } from "./utils/storage";
 
 export default function App() {
-  const [chatOpen, setChatOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(true);
   const [visible, setVisible] = useState(true);
   // Default: bottom-right, with some margin from the edges
   const [position, setPosition] = useState({
