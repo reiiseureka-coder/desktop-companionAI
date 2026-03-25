@@ -75,11 +75,25 @@ export default function ChatWindow({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
-  const justFinishedComposingRef = useRef(false);
 
   useEffect(() => {
     if (chatOpen) inputRef.current?.focus();
   }, [chatOpen]);
+
+  // ネイティブDOMイベントでIMEを確実に検出
+  // ReactのonCompositionEndはkeydownより遅れることがあるため使わない
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const onStart = () => { isComposingRef.current = true; };
+    const onEnd = () => { isComposingRef.current = false; };
+    el.addEventListener("compositionstart", onStart);
+    el.addEventListener("compositionend", onEnd);
+    return () => {
+      el.removeEventListener("compositionstart", onStart);
+      el.removeEventListener("compositionend", onEnd);
+    };
+  }, []);
 
   useEffect(() => {
     if (logRef.current) {
@@ -188,12 +202,7 @@ export default function ChatWindow({
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === "Enter" && !e.shiftKey) {
-        // IME変換確定のEnterでは送信しない
-        // compositionendはkeydownより先に発火するため、isComposingだけでは不十分
-        if (isComposingRef.current || justFinishedComposingRef.current) {
-          justFinishedComposingRef.current = false;
-          return;
-        }
+        if (isComposingRef.current) return; // IME入力中は無視
         e.preventDefault();
         sendMessage();
       }
@@ -460,11 +469,6 @@ export default function ChatWindow({
             value={input}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
-            onCompositionStart={() => { isComposingRef.current = true; }}
-            onCompositionEnd={() => {
-              isComposingRef.current = false;
-              justFinishedComposingRef.current = true;
-            }}
             disabled={isLoading}
             rows={1}
           />
