@@ -11,7 +11,7 @@ import {
   loadChatSize, saveChatSize,
   saveCurrentSession, popCurrentSession, peekCurrentSession,
   loadSessions, saveSessions,
-  Session,
+  Session, DEFAULT_SYSTEM_PROMPT,
 } from "../utils/storage";
 
 interface Message {
@@ -55,6 +55,7 @@ export default function ChatWindow({
   const [workingDir, setWorkingDir] = useState(savedSettings.workingDir);
   const [autoPermissions, setAutoPermissions] = useState(savedSettings.autoPermissions);
   const [resetOnOpen, setResetOnOpen] = useState(savedSettings.resetOnOpen);
+  const [systemPrompt, setSystemPrompt] = useState(savedSettings.systemPrompt ?? DEFAULT_SYSTEM_PROMPT);
 
   const [sessions, setSessions] = useState<Session[]>(() => {
     const existing = loadSessions();
@@ -131,8 +132,8 @@ export default function ChatWindow({
   }, [messages]);
 
   useEffect(() => {
-    saveSettings({ workingDir, autoPermissions, resetOnOpen });
-  }, [workingDir, autoPermissions, resetOnOpen]);
+    saveSettings({ workingDir, autoPermissions, resetOnOpen, systemPrompt });
+  }, [workingDir, autoPermissions, resetOnOpen, systemPrompt]);
 
   useEffect(() => {
     saveChatSize({ width: chatWidth, height: chatHeight });
@@ -209,6 +210,7 @@ export default function ChatWindow({
         context: contextMessages,
         workingDir: workingDir || null,
         autoPermissions,
+        systemPrompt: systemPrompt.trim() || null,
       });
     } catch (e) {
       setIsLoading(false);
@@ -452,6 +454,24 @@ export default function ChatWindow({
                   <small>（OFFで前回の会話を引き継ぎ）</small>
                 </span>
               </label>
+            </div>
+            <div className="settings-row settings-row--column">
+              <div className="settings-label-row">
+                <span className="settings-label">AIのキャラクター設定</span>
+                <button
+                  className="btn-pick btn-pick--small"
+                  onClick={() => setSystemPrompt(DEFAULT_SYSTEM_PROMPT)}
+                >
+                  リセット
+                </button>
+              </div>
+              <textarea
+                className="settings-system-prompt"
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                rows={5}
+                placeholder="AIへの指示（ペルソナ・役割・口調など）"
+              />
             </div>
             {sessions.length > 0 && (
               <div className="settings-row">

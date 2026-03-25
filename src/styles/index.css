@@ -259,6 +259,38 @@ html, body {
 .btn-pick--clear:hover {
   background: rgba(255, 80, 80, 0.22);
 }
+.btn-pick--small {
+  padding: 2px 8px;
+  font-size: 10px;
+}
+
+.settings-row--column {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.settings-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.settings-system-prompt {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 11px;
+  font-family: inherit;
+  color: #3d2e7a;
+  background: white;
+  border: 1px solid rgba(124, 111, 247, 0.2);
+  border-radius: 8px;
+  padding: 6px 8px;
+  resize: vertical;
+  line-height: 1.5;
+  outline: none;
+}
+.settings-system-prompt:focus {
+  border-color: rgba(124, 111, 247, 0.6);
+}
 
 .settings-char-preview {
   width: 36px;

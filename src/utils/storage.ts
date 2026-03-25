@@ -6,10 +6,17 @@ const CHAT_SIZE_KEY = "companion_chat_size";
 const CURRENT_SESSION_KEY = "companion_current_session";
 const SESSIONS_KEY = "companion_sessions";
 
+export const DEFAULT_SYSTEM_PROMPT =
+  `あなたはデスクトップ上に常駐するコンパニオンAIです。
+ユーザーのPC画面の隅に小さなキャラクターとして表示され、いつでも話しかけられる存在です。
+コーディング・調査・ファイル操作など何でも手伝いますが、気軽な雑談にも応じてください。
+返答は簡潔に、必要なときだけ長く書いてください。`;
+
 export interface CompanionSettings {
   workingDir: string;
   autoPermissions: boolean;
   resetOnOpen: boolean;
+  systemPrompt: string;
 }
 
 export function saveSettings(settings: CompanionSettings): void {
@@ -21,15 +28,16 @@ export function saveSettings(settings: CompanionSettings): void {
 export function loadSettings(): CompanionSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return { workingDir: "", autoPermissions: false, resetOnOpen: true };
+    if (!raw) return { workingDir: "", autoPermissions: false, resetOnOpen: true, systemPrompt: DEFAULT_SYSTEM_PROMPT };
     const parsed = JSON.parse(raw) as Partial<CompanionSettings>;
     return {
       workingDir: parsed.workingDir ?? "",
       autoPermissions: parsed.autoPermissions ?? false,
       resetOnOpen: parsed.resetOnOpen ?? true,
+      systemPrompt: parsed.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     };
   } catch (_) {
-    return { workingDir: "", autoPermissions: false, resetOnOpen: true };
+    return { workingDir: "", autoPermissions: false, resetOnOpen: true, systemPrompt: DEFAULT_SYSTEM_PROMPT };
   }
 }
 
