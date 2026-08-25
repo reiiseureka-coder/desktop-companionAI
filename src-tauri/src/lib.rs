@@ -1,3 +1,3 @@
-mod claude;
+mod codex;
 
-pub use claude::{send_to_claude, stop_claude};
+pub use codex::{send_to_codex, stop_codex};

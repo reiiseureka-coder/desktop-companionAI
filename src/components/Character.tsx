@@ -86,7 +86,7 @@ export default function Character({ position, onClick, onPositionChange, imageSr
       }}
       onMouseDown={onMouseDown}
       onClick={handleClick}
-      title="クリックしてチャットを開く (Tabで非表示)"
+      title="クリックしてCodexチャットを開く (Tabで非表示)"
     >
       <img
         src={imageSrc || "/character.png"}

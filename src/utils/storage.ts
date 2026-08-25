@@ -5,6 +5,7 @@ const SIZE_KEY = "companion_size";
 const CHAT_SIZE_KEY = "companion_chat_size";
 const CURRENT_SESSION_KEY = "companion_current_session";
 const SESSIONS_KEY = "companion_sessions";
+const CALENDAR_CACHE_KEY = "companion_calendar_cache";
 
 export const DEFAULT_SYSTEM_PROMPT =
   `あなたはデスクトップ上に常駐するコンパニオンAIです。
@@ -13,12 +14,18 @@ export const DEFAULT_SYSTEM_PROMPT =
 返答は簡潔に、必要なときだけ長く書いてください。`;
 
 export const MODELS = [
-  { id: "claude-sonnet-4-6",          label: "Sonnet 4.6（高性能）" },
-  { id: "claude-haiku-4-5-20251001",  label: "Haiku 4.5（軽量・低コスト）" },
+  { id: "",                    label: "Codex既定値" },
+  { id: "gpt-5-codex",         label: "GPT-5 Codex（高性能）" },
+  { id: "gpt-5.1-codex-mini",  label: "GPT-5.1 Codex mini（軽量）" },
 ] as const;
 
 export type ModelId = typeof MODELS[number]["id"];
-export const DEFAULT_MODEL: ModelId = "claude-sonnet-4-6";
+export const DEFAULT_MODEL: ModelId = "";
+
+function normalizeModelId(model: unknown): ModelId {
+  if (typeof model !== "string") return DEFAULT_MODEL;
+  return MODELS.some((entry) => entry.id === model) ? (model as ModelId) : DEFAULT_MODEL;
+}
 
 export interface CompanionSettings {
   workingDir: string;
@@ -26,7 +33,38 @@ export interface CompanionSettings {
   resetOnOpen: boolean;
   systemPrompt: string;
   model: ModelId;
+  googleClientId: string;
+  googleCalendarId: string;
+  autoDailyCalendarSync: boolean;
+  dailyCalendarSyncTime: string;
 }
+
+export interface CalendarItem {
+  id: string;
+  title: string;
+  startsAt: string;
+  startsLabel: string;
+  kind: "MTG" | "移動";
+  allDay: boolean;
+}
+
+export interface CalendarCache {
+  dateKey: string;
+  lastSyncedAt: number | null;
+  items: CalendarItem[];
+}
+
+const DEFAULT_SETTINGS: CompanionSettings = {
+  workingDir: "",
+  autoPermissions: false,
+  resetOnOpen: true,
+  systemPrompt: DEFAULT_SYSTEM_PROMPT,
+  model: DEFAULT_MODEL,
+  googleClientId: "",
+  googleCalendarId: "primary",
+  autoDailyCalendarSync: false,
+  dailyCalendarSyncTime: "09:00",
+};
 
 export function saveSettings(settings: CompanionSettings): void {
   try {
@@ -37,17 +75,21 @@ export function saveSettings(settings: CompanionSettings): void {
 export function loadSettings(): CompanionSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return { workingDir: "", autoPermissions: false, resetOnOpen: true, systemPrompt: DEFAULT_SYSTEM_PROMPT, model: DEFAULT_MODEL };
+    if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw) as Partial<CompanionSettings>;
     return {
-      workingDir: parsed.workingDir ?? "",
-      autoPermissions: parsed.autoPermissions ?? false,
-      resetOnOpen: parsed.resetOnOpen ?? true,
-      systemPrompt: parsed.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
-      model: parsed.model ?? DEFAULT_MODEL,
+      workingDir: parsed.workingDir ?? DEFAULT_SETTINGS.workingDir,
+      autoPermissions: parsed.autoPermissions ?? DEFAULT_SETTINGS.autoPermissions,
+      resetOnOpen: parsed.resetOnOpen ?? DEFAULT_SETTINGS.resetOnOpen,
+      systemPrompt: parsed.systemPrompt ?? DEFAULT_SETTINGS.systemPrompt,
+      model: normalizeModelId(parsed.model),
+      googleClientId: parsed.googleClientId ?? DEFAULT_SETTINGS.googleClientId,
+      googleCalendarId: parsed.googleCalendarId ?? DEFAULT_SETTINGS.googleCalendarId,
+      autoDailyCalendarSync: parsed.autoDailyCalendarSync ?? DEFAULT_SETTINGS.autoDailyCalendarSync,
+      dailyCalendarSyncTime: parsed.dailyCalendarSyncTime ?? DEFAULT_SETTINGS.dailyCalendarSyncTime,
     };
   } catch (_) {
-    return { workingDir: "", autoPermissions: false, resetOnOpen: true, systemPrompt: DEFAULT_SYSTEM_PROMPT, model: DEFAULT_MODEL };
+    return DEFAULT_SETTINGS;
   }
 }
 
@@ -192,5 +234,21 @@ export function loadSessions(): Session[] {
     return JSON.parse(raw) as Session[];
   } catch (_) {
     return [];
+  }
+}
+
+export function saveCalendarCache(cache: CalendarCache): void {
+  try {
+    localStorage.setItem(CALENDAR_CACHE_KEY, JSON.stringify(cache));
+  } catch (_) {}
+}
+
+export function loadCalendarCache(): CalendarCache | null {
+  try {
+    const raw = localStorage.getItem(CALENDAR_CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as CalendarCache;
+  } catch (_) {
+    return null;
   }
 }
