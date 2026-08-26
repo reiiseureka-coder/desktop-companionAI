@@ -14,6 +14,7 @@ import {
   loadSessions, saveSessions,
   loadCalendarCache, saveCalendarCache,
   Session, DEFAULT_SYSTEM_PROMPT, MODELS, ModelId, CalendarItem,
+  COMPANION_MODES, CompanionMode, ProactiveLevel,
 } from "../utils/storage";
 
 declare global {
@@ -190,6 +191,10 @@ export default function ChatWindow({
   const [googleCalendarId, setGoogleCalendarId] = useState(savedSettings.googleCalendarId);
   const [autoDailyCalendarSync, setAutoDailyCalendarSync] = useState(savedSettings.autoDailyCalendarSync);
   const [dailyCalendarSyncTime, setDailyCalendarSyncTime] = useState(savedSettings.dailyCalendarSyncTime);
+  const [companionMode, setCompanionMode] = useState<CompanionMode>(savedSettings.companionMode);
+  const [memory, setMemory] = useState(savedSettings.memory);
+  const [confirmBeforeActions, setConfirmBeforeActions] = useState(savedSettings.confirmBeforeActions);
+  const [proactiveLevel, setProactiveLevel] = useState<ProactiveLevel>(savedSettings.proactiveLevel);
 
   const [sessions, setSessions] = useState<Session[]>(() => {
     const existing = loadSessions();
@@ -221,6 +226,8 @@ export default function ChatWindow({
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [googleReady, setGoogleReady] = useState(Boolean(window.google?.accounts?.oauth2));
+  const [attachedImages, setAttachedImages] = useState<string[]>([]);
+  const [contextStatus, setContextStatus] = useState<string | null>(null);
 
   const savedChatSize = loadChatSize();
   const [chatWidth, setChatWidth] = useState(savedChatSize.width);
@@ -296,6 +303,10 @@ export default function ChatWindow({
       googleCalendarId,
       autoDailyCalendarSync,
       dailyCalendarSyncTime,
+      companionMode,
+      memory,
+      confirmBeforeActions,
+      proactiveLevel,
     });
   }, [
     workingDir,
@@ -307,6 +318,10 @@ export default function ChatWindow({
     googleCalendarId,
     autoDailyCalendarSync,
     dailyCalendarSyncTime,
+    companionMode,
+    memory,
+    confirmBeforeActions,
+    proactiveLevel,
   ]);
 
   useEffect(() => {
@@ -494,6 +509,8 @@ export default function ChatWindow({
     scheduleTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
     scheduleTimeoutsRef.current = [];
 
+    if (proactiveLevel === "quiet") return;
+
     const today = getTodayDateKey();
     if (today !== todayKey) {
       notifiedEventKeysRef.current.clear();
@@ -503,7 +520,8 @@ export default function ChatWindow({
       if (item.allDay) return;
 
       const startsAt = new Date(item.startsAt).getTime();
-      const notifyAt = startsAt - (5 * 60 * 1000);
+      const leadMinutes = proactiveLevel === "proactive" ? 15 : 5;
+      const notifyAt = startsAt - (leadMinutes * 60 * 1000);
       const now = Date.now();
       const notificationKey = `${todayKey}:${item.id}:${item.startsAt}`;
 
@@ -530,11 +548,18 @@ export default function ChatWindow({
       scheduleTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
       scheduleTimeoutsRef.current = [];
     };
-  }, [ensureNotificationPermission, scheduleItems, todayKey]);
+  }, [ensureNotificationPermission, proactiveLevel, scheduleItems, todayKey]);
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || isLoading) return;
+
+    if (autoPermissions && confirmBeforeActions) {
+      const approved = window.confirm(
+        "Auto実行が有効です。Codexがファイル変更やコマンド実行を行う可能性があります。送信しますか？"
+      );
+      if (!approved) return;
+    }
 
     setInput("");
     setIsLoading(true);
@@ -551,14 +576,21 @@ export default function ChatWindow({
     ]);
 
     try {
+      const modePrompt = COMPANION_MODES.find((entry) => entry.id === companionMode)?.prompt ?? "";
+      const memoryPrompt = memory.trim()
+        ? `\n\nユーザーが明示的に保存した記憶:\n${memory.trim()}`
+        : "";
       await invoke("send_to_codex", {
         message: text,
         context: contextMessages,
         workingDir: workingDir || null,
         autoPermissions,
-        systemPrompt: systemPrompt.trim() || null,
+        systemPrompt: `${systemPrompt.trim()}\n\n現在の作業モード: ${modePrompt}${memoryPrompt}`.trim() || null,
         model: model || null,
+        imagePaths: attachedImages.length > 0 ? attachedImages : null,
       });
+      setAttachedImages([]);
+      setContextStatus(null);
     } catch (e) {
       setIsLoading(false);
       setMessages((prev) => {
@@ -566,7 +598,7 @@ export default function ChatWindow({
         return [...filtered, { id: ++msgId, role: "error", content: `起動エラー: ${String(e)}` }];
       });
     }
-  }, [input, isLoading, messages, workingDir, autoPermissions, systemPrompt, model]);
+  }, [input, isLoading, messages, workingDir, autoPermissions, confirmBeforeActions, systemPrompt, model, companionMode, memory, attachedImages]);
 
   const handleStop = useCallback(async () => {
     await invoke("stop_codex").catch(() => {});
@@ -591,6 +623,34 @@ export default function ChatWindow({
     const el = e.target;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, []);
+
+  const attachCurrentScreen = useCallback(async () => {
+    try {
+      setContextStatus("画面を取得中…");
+      const path = await invoke<string>("capture_current_screen");
+      setAttachedImages([path]);
+      setContextStatus("現在の画面を添付しました");
+      inputRef.current?.focus();
+    } catch (error) {
+      setContextStatus(String(error));
+    }
+  }, []);
+
+  const insertClipboardContext = useCallback(async () => {
+    try {
+      const clipboard = (await invoke<string>("read_clipboard_text")).trim();
+      if (!clipboard) {
+        setContextStatus("クリップボードにテキストがありません");
+        return;
+      }
+      const clipped = clipboard.slice(0, 12000);
+      setInput((current) => `${current}${current ? "\n\n" : ""}[選択・コピーした内容]\n${clipped}`);
+      setContextStatus("コピーした内容を追加しました");
+      inputRef.current?.focus();
+    } catch (error) {
+      setContextStatus(String(error));
+    }
   }, []);
 
   const pickImage = useCallback(async () => {
@@ -783,6 +843,18 @@ export default function ChatWindow({
               </select>
             </div>
             <div className="settings-row">
+              <span className="settings-label">作業モード</span>
+              <select
+                className="settings-select"
+                value={companionMode}
+                onChange={(e) => setCompanionMode(e.target.value as CompanionMode)}
+              >
+                {COMPANION_MODES.map((modeEntry) => (
+                  <option key={modeEntry.id} value={modeEntry.id}>{modeEntry.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="settings-row">
               <span className="settings-label">作業ディレクトリ</span>
               <div className="settings-dir-row">
                 <span className="settings-dir-path" title={workingDir}>
@@ -819,6 +891,19 @@ export default function ChatWindow({
                   ⚠ Codex がコマンド実行やファイル変更を進める場合があります
                 </div>
               )}
+              {autoPermissions && (
+                <label className="settings-toggle">
+                  <input
+                    type="checkbox"
+                    checked={confirmBeforeActions}
+                    onChange={(e) => setConfirmBeforeActions(e.target.checked)}
+                  />
+                  <span>
+                    送信前に実行確認
+                    <small>（Auto実行時の誤操作を防止）</small>
+                  </span>
+                </label>
+              )}
             </div>
             <div className="settings-row">
               <label className="settings-toggle">
@@ -850,6 +935,31 @@ export default function ChatWindow({
                 rows={5}
                 placeholder="AIへの指示（ペルソナ・役割・口調など）"
               />
+            </div>
+            <div className="settings-row settings-row--column">
+              <div className="settings-label-row">
+                <span className="settings-label">Shaolonが覚えておくこと</span>
+                <button className="btn-pick btn-pick--small btn-pick--clear" onClick={() => setMemory("")}>消去</button>
+              </div>
+              <textarea
+                className="settings-system-prompt"
+                value={memory}
+                onChange={(e) => setMemory(e.target.value)}
+                rows={4}
+                placeholder="好み、仕事の前提、よく使う指示など。ここに書いた内容だけを記憶として利用します。"
+              />
+            </div>
+            <div className="settings-row">
+              <span className="settings-label">声かけの頻度</span>
+              <select
+                className="settings-select"
+                value={proactiveLevel}
+                onChange={(e) => setProactiveLevel(e.target.value as ProactiveLevel)}
+              >
+                <option value="quiet">静か（通知なし）</option>
+                <option value="standard">標準（5分前）</option>
+                <option value="proactive">積極的（15分前）</option>
+              </select>
             </div>
             {sessions.length > 0 && (
               <div className="settings-row">
@@ -998,6 +1108,30 @@ export default function ChatWindow({
               ))}
             </div>
 
+            <div className="context-toolbar">
+              <select
+                className="context-mode-select"
+                value={companionMode}
+                onChange={(e) => setCompanionMode(e.target.value as CompanionMode)}
+                title="作業モード"
+              >
+                {COMPANION_MODES.map((modeEntry) => (
+                  <option key={modeEntry.id} value={modeEntry.id}>{modeEntry.label}</option>
+                ))}
+              </select>
+              <button className="btn-context" onClick={attachCurrentScreen} disabled={isLoading} title="現在の画面を添付">
+                ◉ 画面
+              </button>
+              <button className="btn-context" onClick={insertClipboardContext} disabled={isLoading} title="コピーした文章を入力へ追加">
+                ⧉ コピー
+              </button>
+              {attachedImages.length > 0 && (
+                <button className="btn-context btn-context--active" onClick={() => { setAttachedImages([]); setContextStatus(null); }}>
+                  画像 ✓
+                </button>
+              )}
+            </div>
+            {contextStatus && <div className="context-status">{contextStatus}</div>}
             <div className="chat-input-area">
               <textarea
                 ref={inputRef}

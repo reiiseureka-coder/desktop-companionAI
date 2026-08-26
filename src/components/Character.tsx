@@ -4,6 +4,7 @@ interface Props {
   position: { x: number; y: number };
   onClick: () => void;
   onPositionChange: (x: number, y: number) => void;
+  onPositionCommit: (x: number, y: number) => void;
   imageSrc: string | null;
   charSize: number;
 }
@@ -12,16 +13,17 @@ function clamp(val: number, min: number, max: number) {
   return Math.max(min, Math.min(max, val));
 }
 
-export default function Character({ position, onClick, onPositionChange, imageSrc, charSize }: Props) {
+export default function Character({ position, onClick, onPositionChange, onPositionCommit, imageSrc, charSize }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   const dragStart = useRef({ mx: 0, my: 0, ex: 0, ey: 0 });
   const [pos, setPos] = useState(position);
   const [isDragging, setIsDragging] = useState(false);
+  const suppressNextClick = useRef(false);
 
   useEffect(() => {
     setPos(position);
-  }, []);
+  }, [position.x, position.y]);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -46,6 +48,7 @@ export default function Character({ position, onClick, onPositionChange, imageSr
       const newX = clamp(dragStart.current.ex + dx, 0, window.innerWidth - charSize);
       const newY = clamp(dragStart.current.ey + dy, 0, window.innerHeight - charSize);
       setPos({ x: newX, y: newY });
+      onPositionChange(newX, newY);
     };
 
     const onMouseUp = (e: MouseEvent) => {
@@ -55,11 +58,12 @@ export default function Character({ position, onClick, onPositionChange, imageSr
       const wasDragging = Math.abs(dx) > 3 || Math.abs(dy) > 3;
       dragging.current = false;
       setIsDragging(false);
+      suppressNextClick.current = wasDragging;
 
       const newX = clamp(dragStart.current.ex + dx, 0, window.innerWidth - charSize);
       const newY = clamp(dragStart.current.ey + dy, 0, window.innerHeight - charSize);
       if (wasDragging) {
-        onPositionChange(newX, newY);
+        onPositionCommit(newX, newY);
       }
     };
 
@@ -69,9 +73,13 @@ export default function Character({ position, onClick, onPositionChange, imageSr
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
-  }, [onPositionChange, charSize]);
+  }, [onPositionChange, onPositionCommit, charSize]);
 
   const handleClick = useCallback(() => {
+    if (suppressNextClick.current) {
+      suppressNextClick.current = false;
+      return;
+    }
     if (!isDragging) onClick();
   }, [isDragging, onClick]);
 
