@@ -1,10 +1,13 @@
 # Dependencies
 node_modules/
+.pnpm-store/
+.build-tools/
 
 # Build output
 dist/
 dist-ssr/
 *.local
+*.dmg
 
 # Tauri build artifacts
 src-tauri/target/

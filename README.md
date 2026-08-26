@@ -95,7 +95,7 @@ codex login
 ### 依存インストール
 
 ```bash
-npm install
+pnpm install
 ```
 
 ## GitHub 連携と別PCでの利用
@@ -113,16 +113,16 @@ https://github.com/takzp0717/desktop-companionAI
 1. GitHub からリポジトリを clone
 2. Node.js / Rust / Codex CLI をインストール
 3. Codex にログイン
-4. `npm install`
-5. `npm run tauri dev` で起動確認
+4. `pnpm install`
+5. `pnpm run tauri dev` で起動確認
 6. 必要に応じて `.app` をビルド
 
 ```bash
 git clone https://github.com/takzp0717/desktop-companionAI.git
 cd desktop-companionAI
-npm install
+pnpm install
 codex login
-npm run tauri dev
+pnpm run tauri dev
 ```
 
 ### 日常的な同期フロー
@@ -130,16 +130,16 @@ npm run tauri dev
 別PCでも変更を取り込みたい場合は、作業前に pull、変更後に commit / push します。
 
 ```bash
-git pull origin main
+git pull
 git add .
 git commit -m "Update desktop companion"
-git push origin main
+git push
 ```
 
 その後、別のPCで再度以下を実行します。
 
 ```bash
-git pull origin main
+git pull
 ```
 
 ### GitHub では同期されないもの
@@ -159,7 +159,7 @@ git pull origin main
 ### 開発起動
 
 ```bash
-npm run tauri dev
+pnpm run tauri dev
 ```
 
 ### ビルド
@@ -167,23 +167,64 @@ npm run tauri dev
 フロントのみ:
 
 ```bash
-npm run build
+pnpm run build
 ```
 
 `.app` を作る:
 
 ```bash
-npm run tauri build -- --bundles app
+pnpm run tauri build -- --bundles app
 ```
 
 フルビルド:
 
 ```bash
-npm run tauri build
+pnpm run tauri build
 ```
 
 ビルド成果物は通常 `src-tauri/target/release/bundle/macos/` 以下に生成されます。  
 この環境では `.dmg` 生成が Tauri の自動スクリプトで失敗することがあったため、必要なら `hdiutil create` で手動生成します。
+
+### `.app` と `.dmg` の作り方
+
+配布用にまず `.app` を作り、必要ならその `.app` から `.dmg` を作ります。
+
+`.app` を作る:
+
+```bash
+pnpm run tauri build -- --bundles app
+```
+
+生成先:
+
+```text
+src-tauri/target/release/bundle/macos/Shaolon AI.app
+```
+
+`.dmg` も Tauri に任せて試す場合:
+
+```bash
+pnpm run tauri build
+```
+
+もし `.dmg` 生成で失敗した場合は、`.app` を作ったあとに手動で `.dmg` を作成します。
+
+```bash
+hdiutil create -volname "Shaolon AI" \
+  -srcfolder "src-tauri/target/release/bundle/macos/Shaolon AI.app" \
+  -ov -format UDZO \
+  "Shaolon AI.dmg"
+```
+
+手動生成した `.dmg` は通常、プロジェクト直下に作られます。
+
+別の Mac に持っていく最短手順:
+
+1. GitHub から clone
+2. `pnpm install`
+3. `codex login`
+4. `pnpm run tauri build -- --bundles app`
+5. 必要なら上の `hdiutil` で `.dmg` を作成
 
 ## Google Calendar 設定
 
@@ -252,7 +293,7 @@ npm run tauri build
 
 1. フロントエンドから Tauri の `send_to_codex` を呼び出します。
 2. Rust 側で `codex exec` を起動します。
-3. Auto 実行が ON のときは `--full-auto`、OFF のときは `--sandbox read-only` を付けて実行します。
+3. Auto 実行が ON のときは `--approve-for-me`、OFF のときは `--sandbox read-only` を付けて実行します。
 4. 作業ディレクトリに非 ASCII 文字が含まれる場合は、一時ディレクトリにシンボリックリンクを作って Codex に渡します。
 5. JSON イベントを読み取り、最終応答を `codex-output` として返します。
 6. 正常終了時は `codex-done`、異常時は `codex-error` を返します。
@@ -296,7 +337,7 @@ npm run tauri build
 
 - `--model`
 - `--sandbox read-only`
-- `--full-auto`
+- `--approve-for-me`
 - `--ephemeral`
 - `--skip-git-repo-check`
 - 実行ディレクトリ (`--cd`)
@@ -315,3 +356,17 @@ npm run tauri build
 - 自動更新はアプリ起動中にのみスケジュールされます。
 - `.dmg` は環境によって Tauri の標準ビルドで失敗する場合があります。
 - macOS の別PCでは初回起動時に Gatekeeper の許可が必要になる場合があります。
+
+## Shaolon AI 0.2 の追加機能
+
+- 全画面アプリと別Spaceでも同じキャラクターを表示
+- キャラクターのドラッグ中にチャットもリアルタイム追従
+- `Option + Space` でチャットを開閉するグローバルショートカット
+- 現在の画面を明示的に添付して質問する機能
+- コピーしたテキストを会話へ追加する機能
+- 相談・開発・文章・調査・秘書の作業モード
+- ユーザーが確認・編集・削除できる明示的な記憶
+- Auto実行時の送信前確認
+- カレンダー通知の頻度（静か・標準・積極的）
+
+画面キャプチャはユーザーが「画面」ボタンを押したときだけ実行します。初回利用時は、macOSの「プライバシーとセキュリティ > 画面収録」でShaolon AIの許可が必要です。
