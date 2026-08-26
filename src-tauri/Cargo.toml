@@ -1,6 +1,6 @@
 [package]
 name = "desktop-companion-ai"
-version = "0.1.0"
+version = "0.2.1"
 description = "Desktop Companion AI with Codex integration"
 authors = []
 license = ""
@@ -28,6 +28,7 @@ tauri = { version = "1.6", features = [
   "dialog-all",
   "fs-all",
   "notification-all",
+  "global-shortcut-all",
   "macos-private-api"
 ] }
 tokio = { version = "1", features = ["rt-multi-thread"] }

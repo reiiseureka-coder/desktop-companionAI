@@ -1,15 +1,15 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/schema.json",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "pnpm run dev",
+    "beforeBuildCommand": "pnpm run build",
     "devPath": "http://localhost:1420",
     "distDir": "../dist",
     "withGlobalTauri": false
   },
   "package": {
-    "productName": "Desktop Companion AI",
-    "version": "0.1.0"
+    "productName": "Shaolon AI",
+    "version": "0.2.1"
   },
   "tauri": {
     "allowlist": {
@@ -36,6 +36,9 @@
       },
       "notification": {
         "all": true
+      },
+      "globalShortcut": {
+        "all": true
       }
     },
     "bundle": {
@@ -57,7 +60,7 @@
       {
         "fullscreen": false,
         "resizable": false,
-        "title": "Desktop Companion AI",
+        "title": "Shaolon AI",
         "width": 1280,
         "height": 800,
         "transparent": true,
