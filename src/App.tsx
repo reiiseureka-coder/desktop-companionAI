@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
+import { listen } from "@tauri-apps/api/event";
 import Character from "./components/Character";
 import ChatWindow from "./components/ChatWindow";
 import { loadPosition, savePosition, loadCharacterImage, saveCharacterImage, clearCharacterImage, loadCharacterSize, saveCharacterSize } from "./utils/storage";
@@ -21,6 +22,15 @@ export default function App() {
   // Apply size CSS variable on mount
   useEffect(() => {
     document.documentElement.style.setProperty("--char-size", `${charSize}px`);
+  }, []);
+
+  // macOS global shortcut (Option+Space) opens the companion on the active Space.
+  useEffect(() => {
+    const unlisten = listen("toggle-chat", () => {
+      setVisible(true);
+      setChatOpen((open) => !open);
+    });
+    return () => { unlisten.then((f) => f()); };
   }, []);
 
   // Load saved position on mount
@@ -95,10 +105,14 @@ export default function App() {
 
   const handleCharacterClick = useCallback(() => {
     if (!visible) return;
-    setChatOpen((o) => !o);
+    setChatOpen((open) => !open);
   }, [visible]);
 
   const handlePositionChange = useCallback((x: number, y: number) => {
+    setPosition({ x, y });
+  }, []);
+
+  const handlePositionCommit = useCallback((x: number, y: number) => {
     setPosition({ x, y });
     savePosition(x, y);
   }, []);
@@ -134,6 +148,7 @@ export default function App() {
         position={position}
         onClick={handleCharacterClick}
         onPositionChange={handlePositionChange}
+        onPositionCommit={handlePositionCommit}
         imageSrc={characterImage}
         charSize={charSize}
       />
