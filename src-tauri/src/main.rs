@@ -9,6 +9,19 @@ use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{GlobalShortcutManager, Manager};
 
+fn register_reveal_shortcut(app: &tauri::AppHandle, accelerator: &str) -> tauri::Result<()> {
+    let shortcut_app = app.clone();
+    app.global_shortcut_manager().register(accelerator, move || {
+        if let Some(window) = shortcut_app.get_window("main") {
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+        let _ = shortcut_app.emit_all("show-chat", ());
+    })?;
+    Ok(())
+}
+
 #[tauri::command]
 fn set_cursor_passthrough(window: tauri::Window, passthrough: bool) -> Result<(), String> {
     window
@@ -88,11 +101,18 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            let shortcut_app = app.handle();
-            let _ = app.global_shortcut_manager()
-                .register("Alt+Space", move || {
-                    let _ = shortcut_app.emit_all("toggle-chat", ());
-                });
+            // On macOS, Tauri accepts both "Option" and "Alt". Use the
+            // user-facing name here and keep a fallback in case another app
+            // has already claimed Option+Space.
+            if let Err(error) = register_reveal_shortcut(&app.handle(), "Option+Space") {
+                eprintln!("Option+Space could not be registered: {error}");
+            }
+            if let Err(error) = register_reveal_shortcut(
+                &app.handle(),
+                "CommandOrControl+Shift+Space",
+            ) {
+                eprintln!("Fallback shortcut could not be registered: {error}");
+            }
 
             // Resize the window to cover the full primary monitor
             if let Some(window) = app.get_window("main") {

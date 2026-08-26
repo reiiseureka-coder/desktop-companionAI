@@ -645,8 +645,8 @@ export default function ChatWindow({
         return;
       }
       const clipped = clipboard.slice(0, 12000);
-      setInput((current) => `${current}${current ? "\n\n" : ""}[選択・コピーした内容]\n${clipped}`);
-      setContextStatus("コピーした内容を追加しました");
+      setInput((current) => `${current}${current ? "\n\n" : ""}[クリップボードからペーストした内容]\n${clipped}`);
+      setContextStatus("クリップボードの内容をペーストしました");
       inputRef.current?.focus();
     } catch (error) {
       setContextStatus(String(error));
@@ -1122,8 +1122,8 @@ export default function ChatWindow({
               <button className="btn-context" onClick={attachCurrentScreen} disabled={isLoading} title="現在の画面を添付">
                 ◉ 画面
               </button>
-              <button className="btn-context" onClick={insertClipboardContext} disabled={isLoading} title="コピーした文章を入力へ追加">
-                ⧉ コピー
+              <button className="btn-context" onClick={insertClipboardContext} disabled={isLoading} title="クリップボードの文章を入力欄へペースト">
+                ⧉ ペースト
               </button>
               {attachedImages.length > 0 && (
                 <button className="btn-context btn-context--active" onClick={() => { setAttachedImages([]); setContextStatus(null); }}>

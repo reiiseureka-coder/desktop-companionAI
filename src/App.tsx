@@ -24,11 +24,11 @@ export default function App() {
     document.documentElement.style.setProperty("--char-size", `${charSize}px`);
   }, []);
 
-  // macOS global shortcut (Option+Space) opens the companion on the active Space.
+  // Global shortcuts always reveal the companion on the active Space.
   useEffect(() => {
-    const unlisten = listen("toggle-chat", () => {
+    const unlisten = listen("show-chat", () => {
       setVisible(true);
-      setChatOpen((open) => !open);
+      setChatOpen(true);
     });
     return () => { unlisten.then((f) => f()); };
   }, []);
