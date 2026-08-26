@@ -22,6 +22,22 @@ export const MODELS = [
 export type ModelId = typeof MODELS[number]["id"];
 export const DEFAULT_MODEL: ModelId = "";
 
+export const COMPANION_MODES = [
+  { id: "general", label: "相談", prompt: "日常の相談相手として、結論を先に簡潔に答えてください。" },
+  { id: "developer", label: "開発", prompt: "ソフトウェア開発パートナーとして、原因を確認し、安全に実装・検証してください。" },
+  { id: "writer", label: "文章", prompt: "編集者として、目的と読み手に合う明快な文章を作ってください。" },
+  { id: "research", label: "調査", prompt: "調査担当として、事実と推測を分け、根拠を示してください。" },
+  { id: "secretary", label: "秘書", prompt: "秘書として、予定・優先順位・次の行動を簡潔に整理してください。" },
+] as const;
+
+export type CompanionMode = typeof COMPANION_MODES[number]["id"];
+export type ProactiveLevel = "quiet" | "standard" | "proactive";
+
+function normalizeCompanionMode(mode: unknown): CompanionMode {
+  if (typeof mode !== "string") return "general";
+  return COMPANION_MODES.some((entry) => entry.id === mode) ? (mode as CompanionMode) : "general";
+}
+
 function normalizeModelId(model: unknown): ModelId {
   if (typeof model !== "string") return DEFAULT_MODEL;
   return MODELS.some((entry) => entry.id === model) ? (model as ModelId) : DEFAULT_MODEL;
@@ -37,6 +53,10 @@ export interface CompanionSettings {
   googleCalendarId: string;
   autoDailyCalendarSync: boolean;
   dailyCalendarSyncTime: string;
+  companionMode: CompanionMode;
+  memory: string;
+  confirmBeforeActions: boolean;
+  proactiveLevel: ProactiveLevel;
 }
 
 export interface CalendarItem {
@@ -64,6 +84,10 @@ const DEFAULT_SETTINGS: CompanionSettings = {
   googleCalendarId: "primary",
   autoDailyCalendarSync: false,
   dailyCalendarSyncTime: "09:00",
+  companionMode: "general",
+  memory: "",
+  confirmBeforeActions: true,
+  proactiveLevel: "standard",
 };
 
 export function saveSettings(settings: CompanionSettings): void {
@@ -87,6 +111,12 @@ export function loadSettings(): CompanionSettings {
       googleCalendarId: parsed.googleCalendarId ?? DEFAULT_SETTINGS.googleCalendarId,
       autoDailyCalendarSync: parsed.autoDailyCalendarSync ?? DEFAULT_SETTINGS.autoDailyCalendarSync,
       dailyCalendarSyncTime: parsed.dailyCalendarSyncTime ?? DEFAULT_SETTINGS.dailyCalendarSyncTime,
+      companionMode: normalizeCompanionMode(parsed.companionMode),
+      memory: parsed.memory ?? DEFAULT_SETTINGS.memory,
+      confirmBeforeActions: parsed.confirmBeforeActions ?? DEFAULT_SETTINGS.confirmBeforeActions,
+      proactiveLevel: parsed.proactiveLevel === "quiet" || parsed.proactiveLevel === "proactive"
+        ? parsed.proactiveLevel
+        : "standard",
     };
   } catch (_) {
     return DEFAULT_SETTINGS;
