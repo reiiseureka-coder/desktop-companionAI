@@ -3,18 +3,50 @@
 
 mod codex;
 
+use std::io::Write;
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{GlobalShortcutManager, Manager};
 
+fn log_shortcut(message: &str) {
+    let path = std::env::temp_dir().join("shaolon-shortcut.log");
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(file, "{}", message);
+    }
+}
+
 fn register_reveal_shortcut(app: &tauri::AppHandle, accelerator: &str) -> tauri::Result<()> {
     let shortcut_app = app.clone();
+    let shortcut_name = accelerator.to_string();
     app.global_shortcut_manager().register(accelerator, move || {
+        log_shortcut(&format!("pressed: {}", shortcut_name));
         if let Some(window) = shortcut_app.get_window("main") {
             let _ = window.show();
             let _ = window.unminimize();
+
+            // Accessory apps are not reliably brought forward by set_focus()
+            // alone, especially while another app owns a full-screen Space.
+            #[cfg(target_os = "macos")]
+            {
+                use objc::{class, msg_send, sel, sel_impl, runtime::Object};
+                if let Ok(ptr) = window.ns_window() {
+                    let ns_window = ptr as *mut Object;
+                    unsafe {
+                        let ns_app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
+                        let _: () = msg_send![ns_app, activateIgnoringOtherApps: true];
+                        let nil: *mut Object = std::ptr::null_mut();
+                        let _: () = msg_send![ns_window, makeKeyAndOrderFront: nil];
+                        let _: () = msg_send![ns_window, orderFrontRegardless];
+                    }
+                }
+            }
+
             let _ = window.set_focus();
         }
         let _ = shortcut_app.emit_all("show-chat", ());
@@ -105,13 +137,19 @@ fn main() {
             // user-facing name here and keep a fallback in case another app
             // has already claimed Option+Space.
             if let Err(error) = register_reveal_shortcut(&app.handle(), "Option+Space") {
+                log_shortcut(&format!("registration failed: Option+Space: {error}"));
                 eprintln!("Option+Space could not be registered: {error}");
+            } else {
+                log_shortcut("registered: Option+Space");
             }
             if let Err(error) = register_reveal_shortcut(
                 &app.handle(),
                 "CommandOrControl+Shift+Space",
             ) {
+                log_shortcut(&format!("registration failed: Command+Shift+Space: {error}"));
                 eprintln!("Fallback shortcut could not be registered: {error}");
+            } else {
+                log_shortcut("registered: Command+Shift+Space");
             }
 
             // Resize the window to cover the full primary monitor
