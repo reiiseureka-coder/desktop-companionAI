@@ -28,6 +28,7 @@ pub async fn send_to_codex(
     auto_permissions: bool,
     system_prompt: Option<String>,
     model: Option<String>,
+    image_paths: Option<Vec<String>>,
     app: AppHandle,
 ) -> Result<(), String> {
     thread::spawn(move || {
@@ -38,6 +39,7 @@ pub async fn send_to_codex(
             auto_permissions,
             system_prompt,
             model,
+            image_paths,
             app,
         );
     });
@@ -71,6 +73,7 @@ fn run_codex(
     auto_permissions: bool,
     system_prompt: Option<String>,
     model: Option<String>,
+    image_paths: Option<Vec<String>>,
     app: AppHandle,
 ) {
     log_debug("send_to_codex: start");
@@ -121,6 +124,12 @@ fn run_codex(
     if let Some(ref m) = model {
         if !m.trim().is_empty() {
             cmd.arg("--model").arg(m);
+        }
+    }
+
+    if let Some(paths) = image_paths {
+        for path in paths.into_iter().filter(|path| !path.trim().is_empty()) {
+            cmd.arg("--image").arg(path);
         }
     }
 
