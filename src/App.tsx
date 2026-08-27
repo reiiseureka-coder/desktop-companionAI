@@ -34,9 +34,8 @@ export default function App() {
   const currentPassthrough = useRef(false);
   const previousCharSize = useRef(effectiveCharSize);
 
-  // Preserve the character's horizontal center and bottom edge while switching
-  // sizes. The normal character therefore grows upward and evenly sideways
-  // instead of appearing to slide in from the right or extend downward.
+  // Preserve the character's right and bottom edges while switching sizes.
+  // The normal character therefore grows only toward the upper-left.
   useLayoutEffect(() => {
     const previous = previousCharSize.current;
     if (previous === effectiveCharSize) return;
@@ -46,10 +45,7 @@ export default function App() {
       const maxX = Math.max(0, window.innerWidth - effectiveCharSize);
       const maxY = Math.max(0, window.innerHeight - effectiveCharSize);
       const next = {
-        x: Math.max(
-          0,
-          Math.min(maxX, current.x + (previous - effectiveCharSize) / 2)
-        ),
+        x: Math.max(0, Math.min(maxX, current.x + previous - effectiveCharSize)),
         y: Math.max(0, Math.min(maxY, current.y + previous - effectiveCharSize)),
       };
       savePosition(next.x, next.y);

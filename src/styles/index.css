@@ -55,19 +55,6 @@ html, body {
   border: none;
   outline: none;
   /* Position is set via inline style, relative to character */
-  animation: bubblePop 0.16s ease-out;
-  transform-origin: bottom center;
-}
-
-@keyframes bubblePop {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 /* Bubble tail — pointing down toward the character */

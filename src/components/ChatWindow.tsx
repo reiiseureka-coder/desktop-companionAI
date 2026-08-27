@@ -731,9 +731,8 @@ export default function ChatWindow({
     : null;
 
   const GAP = 12;
-  const TAIL_RIGHT = 28;
   const bubbleLeft = Math.max(8, Math.min(
-    characterPosition.x + charSize / 2 + TAIL_RIGHT - chatWidth,
+    characterPosition.x + charSize - chatWidth,
     window.innerWidth - chatWidth - 8
   ));
   const bubbleBottom = window.innerHeight - characterPosition.y + GAP;
