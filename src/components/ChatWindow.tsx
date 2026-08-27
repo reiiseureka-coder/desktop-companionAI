@@ -59,6 +59,8 @@ interface Props {
   currentImage: string | null;
   charSize: number;
   onSizeChange: (size: number) => void;
+  compactCharSize: number;
+  onCompactSizeChange: (size: number) => void;
   onToggleVisible: () => void;
 }
 
@@ -176,7 +178,8 @@ function getNextDailySyncDelay(syncTime: string): number {
 
 export default function ChatWindow({
   chatOpen, characterPosition, onClose, onImageChange,
-  currentImage, charSize, onSizeChange, onToggleVisible,
+  currentImage, charSize, onSizeChange, compactCharSize,
+  onCompactSizeChange, onToggleVisible,
 }: Props) {
   const savedSettings = loadSettings();
   const cachedSchedule = loadCalendarCache();
@@ -789,6 +792,19 @@ export default function ChatWindow({
                 max={200}
                 value={charSize}
                 onChange={(e) => onSizeChange(Number(e.target.value))}
+                className="settings-size-slider"
+              />
+            </div>
+            <div className="settings-row">
+              <span className="settings-label">
+                全画面用（待機時）サイズ ({compactCharSize}px)
+              </span>
+              <input
+                type="range"
+                min={24}
+                max={100}
+                value={compactCharSize}
+                onChange={(e) => onCompactSizeChange(Number(e.target.value))}
                 className="settings-size-slider"
               />
             </div>

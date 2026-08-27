@@ -3,7 +3,17 @@ import { invoke } from "@tauri-apps/api/tauri";
 import { listen } from "@tauri-apps/api/event";
 import Character from "./components/Character";
 import ChatWindow from "./components/ChatWindow";
-import { loadPosition, savePosition, loadCharacterImage, saveCharacterImage, clearCharacterImage, loadCharacterSize, saveCharacterSize } from "./utils/storage";
+import {
+  loadPosition,
+  savePosition,
+  loadCharacterImage,
+  saveCharacterImage,
+  clearCharacterImage,
+  loadCharacterSize,
+  saveCharacterSize,
+  loadCompactCharacterSize,
+  saveCompactCharacterSize,
+} from "./utils/storage";
 
 export default function App() {
   const [chatOpen, setChatOpen] = useState(true);
@@ -15,14 +25,19 @@ export default function App() {
   });
   const [characterImage, setCharacterImage] = useState<string | null>(() => loadCharacterImage());
   const [charSize, setCharSize] = useState<number>(() => loadCharacterSize());
+  const [compactCharSize, setCompactCharSize] = useState<number>(() =>
+    loadCompactCharacterSize(charSize)
+  );
+  const effectiveCharSize = chatOpen ? charSize : compactCharSize;
 
   const chatOpenRef = useRef(false);
   const currentPassthrough = useRef(false);
 
-  // Apply size CSS variable on mount
+  // Keep the normal and compact launcher sizes on the same character element.
+  // This preserves drag position and chat anchoring when the image changes.
   useEffect(() => {
-    document.documentElement.style.setProperty("--char-size", `${charSize}px`);
-  }, []);
+    document.documentElement.style.setProperty("--char-size", `${effectiveCharSize}px`);
+  }, [effectiveCharSize]);
 
   // Global shortcuts always reveal the companion on the active Space.
   useEffect(() => {
@@ -158,7 +173,11 @@ export default function App() {
   const handleSizeChange = useCallback((size: number) => {
     setCharSize(size);
     saveCharacterSize(size);
-    document.documentElement.style.setProperty("--char-size", `${size}px`);
+  }, []);
+
+  const handleCompactSizeChange = useCallback((size: number) => {
+    setCompactCharSize(size);
+    saveCompactCharacterSize(size);
   }, []);
 
   if (!visible) return null;
@@ -170,8 +189,8 @@ export default function App() {
         onClick={handleCharacterClick}
         onPositionChange={handlePositionChange}
         onPositionCommit={handlePositionCommit}
-        imageSrc={characterImage}
-        charSize={charSize}
+        imageSrc={chatOpen ? characterImage : "/fullscreen-launcher.png"}
+        charSize={effectiveCharSize}
       />
       <ChatWindow
         chatOpen={chatOpen}
@@ -181,6 +200,8 @@ export default function App() {
         currentImage={characterImage}
         charSize={charSize}
         onSizeChange={handleSizeChange}
+        compactCharSize={compactCharSize}
+        onCompactSizeChange={handleCompactSizeChange}
         onToggleVisible={handleToggleVisible}
       />
     </div>
