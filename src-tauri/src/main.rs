@@ -21,12 +21,10 @@ fn log_shortcut(message: &str) {
     }
 }
 
-fn register_reveal_shortcut(app: &tauri::AppHandle, accelerator: &str) -> tauri::Result<()> {
-    let shortcut_app = app.clone();
-    let shortcut_name = accelerator.to_string();
-    app.global_shortcut_manager().register(accelerator, move || {
-        log_shortcut(&format!("pressed: {}", shortcut_name));
-        if let Some(window) = shortcut_app.get_window("main") {
+fn reveal_companion(app: &tauri::AppHandle) {
+    let reveal_app = app.clone();
+    if let Err(error) = app.run_on_main_thread(move || {
+        if let Some(window) = reveal_app.get_window("main") {
             let _ = window.show();
             let _ = window.unminimize();
 
@@ -34,7 +32,7 @@ fn register_reveal_shortcut(app: &tauri::AppHandle, accelerator: &str) -> tauri:
             // alone, especially while another app owns a full-screen Space.
             #[cfg(target_os = "macos")]
             {
-                use objc::{class, msg_send, sel, sel_impl, runtime::Object};
+                use objc::{class, msg_send, runtime::Object, sel, sel_impl};
                 if let Ok(ptr) = window.ns_window() {
                     let ns_window = ptr as *mut Object;
                     unsafe {
@@ -49,9 +47,60 @@ fn register_reveal_shortcut(app: &tauri::AppHandle, accelerator: &str) -> tauri:
 
             let _ = window.set_focus();
         }
-        let _ = shortcut_app.emit_all("show-chat", ());
+        let _ = reveal_app.emit_all("show-chat", ());
+    }) {
+        log_shortcut(&format!("reveal scheduling failed: {error}"));
+    }
+}
+
+fn register_reveal_shortcut(app: &tauri::AppHandle, accelerator: &str) -> tauri::Result<()> {
+    let shortcut_app = app.clone();
+    let shortcut_name = accelerator.to_string();
+    app.global_shortcut_manager().register(accelerator, move || {
+        log_shortcut(&format!("pressed: {}", shortcut_name));
+        reveal_companion(&shortcut_app);
     })?;
     Ok(())
+}
+
+fn ensure_reveal_shortcuts(app: &tauri::AppHandle) -> Vec<String> {
+    // Tauri maps macOS Option to the cross-platform Alt modifier. Using the
+    // canonical name here also keeps the accelerator ID stable across retries.
+    let shortcuts = ["Alt+Space", "CommandOrControl+Shift+Space"];
+    let mut statuses = Vec::new();
+
+    for accelerator in shortcuts {
+        let manager = app.global_shortcut_manager();
+        match manager.is_registered(accelerator) {
+            Ok(true) => {
+                statuses.push(format!("registered: {accelerator}"));
+            }
+            Ok(false) => match register_reveal_shortcut(app, accelerator) {
+                Ok(()) => {
+                    let status = format!("registered: {accelerator}");
+                    log_shortcut(&status);
+                    statuses.push(status);
+                }
+                Err(error) => {
+                    let status = format!("registration failed: {accelerator}: {error}");
+                    log_shortcut(&status);
+                    statuses.push(status);
+                }
+            },
+            Err(error) => {
+                let status = format!("registration check failed: {accelerator}: {error}");
+                log_shortcut(&status);
+                statuses.push(status);
+            }
+        }
+    }
+
+    statuses
+}
+
+#[tauri::command]
+fn ensure_global_shortcuts(app: tauri::AppHandle) -> Vec<String> {
+    ensure_reveal_shortcuts(&app)
 }
 
 #[tauri::command]
@@ -133,23 +182,8 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            // On macOS, Tauri accepts both "Option" and "Alt". Use the
-            // user-facing name here and keep a fallback in case another app
-            // has already claimed Option+Space.
-            if let Err(error) = register_reveal_shortcut(&app.handle(), "Option+Space") {
-                log_shortcut(&format!("registration failed: Option+Space: {error}"));
-                eprintln!("Option+Space could not be registered: {error}");
-            } else {
-                log_shortcut("registered: Option+Space");
-            }
-            if let Err(error) = register_reveal_shortcut(
-                &app.handle(),
-                "CommandOrControl+Shift+Space",
-            ) {
-                log_shortcut(&format!("registration failed: Command+Shift+Space: {error}"));
-                eprintln!("Fallback shortcut could not be registered: {error}");
-            } else {
-                log_shortcut("registered: Command+Shift+Space");
+            for status in ensure_reveal_shortcuts(&app.handle()) {
+                eprintln!("Shortcut: {status}");
             }
 
             // Resize the window to cover the full primary monitor
@@ -190,6 +224,7 @@ fn main() {
             get_cursor_pos_native,
             capture_current_screen,
             read_clipboard_text,
+            ensure_global_shortcuts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

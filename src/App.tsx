@@ -33,6 +33,27 @@ export default function App() {
     return () => { unlisten.then((f) => f()); };
   }, []);
 
+  // Verify the native shortcuts again after the webview is ready and whenever
+  // macOS brings the app back from sleep or another Space. This repairs a
+  // registration that was temporarily unavailable during application startup.
+  useEffect(() => {
+    const ensureShortcuts = () => {
+      invoke<string[]>("ensure_global_shortcuts").catch(() => {});
+    };
+
+    const initialRetry = window.setTimeout(ensureShortcuts, 750);
+    const periodicRetry = window.setInterval(ensureShortcuts, 10_000);
+    window.addEventListener("focus", ensureShortcuts);
+    document.addEventListener("visibilitychange", ensureShortcuts);
+
+    return () => {
+      window.clearTimeout(initialRetry);
+      window.clearInterval(periodicRetry);
+      window.removeEventListener("focus", ensureShortcuts);
+      document.removeEventListener("visibilitychange", ensureShortcuts);
+    };
+  }, []);
+
   // Load saved position on mount
   // Ignore old-system positions where both x,y are near 0 (those were bottom-right offsets)
   useEffect(() => {
