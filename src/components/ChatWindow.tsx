@@ -64,13 +64,10 @@ interface Props {
   onToggleVisible: () => void;
 }
 
-type ScheduleKind = CalendarItem["kind"];
-
 let msgId = 0;
 
 const CONTEXT_WINDOW = 6;
 const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
-const SCHEDULE_TAGS: ScheduleKind[] = ["MTG", "移動"];
 const MTG_NOTIFICATIONS = [
   "そろそろMTGだよ",
   "あと5分でMTGだよ",
@@ -116,15 +113,19 @@ function formatScheduleTimestamp(timestamp: number | null): string {
   return `${hh}:${mm}`;
 }
 
+function normalizeScheduleTag(value: string): string {
+  return value.trim().replace(/^【/, "").replace(/】$/, "").trim();
+}
+
 function parseScheduleItem(raw: {
   id?: string;
   summary?: string;
   start?: { dateTime?: string; date?: string };
-}): CalendarItem | null {
+}, scheduleTags: string[]): CalendarItem | null {
   const title = raw.summary?.trim();
   if (!title) return null;
 
-  const kind = SCHEDULE_TAGS.find((tag) => title.includes(`【${tag}】`));
+  const kind = scheduleTags.find((tag) => title.startsWith(`【${tag}】`));
   if (!kind || !raw.id || !raw.start) return null;
 
   const startsAt = raw.start.dateTime ?? raw.start.date;
@@ -159,6 +160,9 @@ function parseScheduleItem(raw: {
 }
 
 function buildNotificationBody(item: CalendarItem): string {
+  if (item.kind !== "MTG" && item.kind !== "移動") {
+    return `もうすぐ「${item.kind}」の予定だよ`;
+  }
   const pool = item.kind === "MTG" ? MTG_NOTIFICATIONS : MOVE_NOTIFICATIONS;
   return pool[Math.floor(Math.random() * pool.length)] ?? pool[0];
 }
@@ -192,6 +196,8 @@ export default function ChatWindow({
   const [model, setModel] = useState<ModelId>(savedSettings.model);
   const [googleClientId, setGoogleClientId] = useState(savedSettings.googleClientId);
   const [googleCalendarId, setGoogleCalendarId] = useState(savedSettings.googleCalendarId);
+  const [calendarTags, setCalendarTags] = useState(savedSettings.calendarTags);
+  const [calendarTagInput, setCalendarTagInput] = useState("");
   const [autoDailyCalendarSync, setAutoDailyCalendarSync] = useState(savedSettings.autoDailyCalendarSync);
   const [dailyCalendarSyncTime, setDailyCalendarSyncTime] = useState(savedSettings.dailyCalendarSyncTime);
   const [companionMode, setCompanionMode] = useState<CompanionMode>(savedSettings.companionMode);
@@ -304,6 +310,7 @@ export default function ChatWindow({
       model,
       googleClientId,
       googleCalendarId,
+      calendarTags,
       autoDailyCalendarSync,
       dailyCalendarSyncTime,
       companionMode,
@@ -319,6 +326,7 @@ export default function ChatWindow({
     model,
     googleClientId,
     googleCalendarId,
+    calendarTags,
     autoDailyCalendarSync,
     dailyCalendarSyncTime,
     companionMode,
@@ -474,7 +482,7 @@ export default function ChatWindow({
       };
 
       const items = (payload.items ?? [])
-        .map(parseScheduleItem)
+        .map((item) => parseScheduleItem(item, calendarTags))
         .filter((item): item is CalendarItem => item !== null);
 
       const syncedAt = Date.now();
@@ -492,7 +500,7 @@ export default function ChatWindow({
     } finally {
       setScheduleLoading(false);
     }
-  }, [ensureGoogleToken, ensureNotificationPermission, googleCalendarId]);
+  }, [calendarTags, ensureGoogleToken, ensureNotificationPermission, googleCalendarId]);
 
   useEffect(() => {
     if (!showTodaySchedule) return;
@@ -725,6 +733,30 @@ export default function ChatWindow({
       return next;
     });
   }, []);
+
+  const invalidateSchedule = useCallback(() => {
+    setScheduleItems([]);
+    setScheduleLastSyncedAt(null);
+    setScheduleError(null);
+    saveCalendarCache({
+      dateKey: getTodayDateKey(),
+      lastSyncedAt: null,
+      items: [],
+    });
+  }, []);
+
+  const addCalendarTag = useCallback(() => {
+    const nextTag = normalizeScheduleTag(calendarTagInput);
+    if (!nextTag) return;
+    setCalendarTags((current) => current.includes(nextTag) ? current : [...current, nextTag]);
+    setCalendarTagInput("");
+    invalidateSchedule();
+  }, [calendarTagInput, invalidateSchedule]);
+
+  const removeCalendarTag = useCallback((tag: string) => {
+    setCalendarTags((current) => current.filter((entry) => entry !== tag));
+    invalidateSchedule();
+  }, [invalidateSchedule]);
 
   const dirName = workingDir
     ? (workingDir === homeDirRef.current ? "~" : workingDir.split("/").pop() || workingDir)
@@ -1015,10 +1047,53 @@ export default function ChatWindow({
             </div>
 
             <div className="schedule-panel-note">
-              `【MTG】` と `【移動】` の予定だけ表示して、5分前に声かけします
+              {calendarTags.length > 0
+                ? `${calendarTags.map((tag) => `【${tag}】`).join("・")} から始まる予定だけ表示・通知します`
+                : "通知対象ラベルが未設定です"}
             </div>
 
             <div className="schedule-config">
+              <div className="settings-row settings-row--column">
+                <div className="settings-label-row">
+                  <span className="settings-label">通知対象ラベル</span>
+                </div>
+                <div className="schedule-tag-editor">
+                  <input
+                    className="settings-text-input"
+                    value={calendarTagInput}
+                    onChange={(e) => setCalendarTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addCalendarTag();
+                      }
+                    }}
+                    placeholder="例: アライアンス"
+                  />
+                  <button
+                    className="btn-pick"
+                    onClick={addCalendarTag}
+                    disabled={!normalizeScheduleTag(calendarTagInput)}
+                  >
+                    追加
+                  </button>
+                </div>
+                <div className="schedule-tag-help">
+                  【】は入れなくてもOK。予定名の先頭にあるラベルと一致します。
+                </div>
+                <div className="schedule-tag-list">
+                  {calendarTags.map((tag) => (
+                    <button
+                      key={tag}
+                      className="schedule-tag-chip"
+                      onClick={() => removeCalendarTag(tag)}
+                      title={`【${tag}】を削除`}
+                    >
+                      【{tag}】 <span aria-hidden="true">×</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="settings-row settings-row--column">
                 <div className="settings-label-row">
                   <span className="settings-label">Google Client ID</span>

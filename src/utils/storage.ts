@@ -15,9 +15,10 @@ export const DEFAULT_SYSTEM_PROMPT =
 返答は簡潔に、必要なときだけ長く書いてください。`;
 
 export const MODELS = [
-  { id: "",                    label: "Codex既定値" },
-  { id: "gpt-5-codex",         label: "GPT-5 Codex（高性能）" },
-  { id: "gpt-5.1-codex-mini",  label: "GPT-5.1 Codex mini（軽量）" },
+  { id: "",              label: "Codex既定値" },
+  { id: "gpt-5.6-sol",   label: "GPT-5.6 Sol（最高性能）" },
+  { id: "gpt-5.6-terra", label: "GPT-5.6 Terra（バランス）" },
+  { id: "gpt-5.6-luna",  label: "GPT-5.6 Luna（高速・軽量）" },
 ] as const;
 
 export type ModelId = typeof MODELS[number]["id"];
@@ -33,6 +34,7 @@ export const COMPANION_MODES = [
 
 export type CompanionMode = typeof COMPANION_MODES[number]["id"];
 export type ProactiveLevel = "quiet" | "standard" | "proactive";
+export const DEFAULT_CALENDAR_TAGS = ["MTG", "移動"];
 
 function normalizeCompanionMode(mode: unknown): CompanionMode {
   if (typeof mode !== "string") return "general";
@@ -44,6 +46,14 @@ function normalizeModelId(model: unknown): ModelId {
   return MODELS.some((entry) => entry.id === model) ? (model as ModelId) : DEFAULT_MODEL;
 }
 
+function normalizeCalendarTags(tags: unknown): string[] {
+  if (!Array.isArray(tags)) return [...DEFAULT_CALENDAR_TAGS];
+  return [...new Set(tags
+    .filter((tag): tag is string => typeof tag === "string")
+    .map((tag) => tag.trim().replace(/^【/, "").replace(/】$/, "").trim())
+    .filter(Boolean))];
+}
+
 export interface CompanionSettings {
   workingDir: string;
   autoPermissions: boolean;
@@ -52,6 +62,7 @@ export interface CompanionSettings {
   model: ModelId;
   googleClientId: string;
   googleCalendarId: string;
+  calendarTags: string[];
   autoDailyCalendarSync: boolean;
   dailyCalendarSyncTime: string;
   companionMode: CompanionMode;
@@ -65,7 +76,7 @@ export interface CalendarItem {
   title: string;
   startsAt: string;
   startsLabel: string;
-  kind: "MTG" | "移動";
+  kind: string;
   allDay: boolean;
 }
 
@@ -83,6 +94,7 @@ const DEFAULT_SETTINGS: CompanionSettings = {
   model: DEFAULT_MODEL,
   googleClientId: "",
   googleCalendarId: "primary",
+  calendarTags: [...DEFAULT_CALENDAR_TAGS],
   autoDailyCalendarSync: false,
   dailyCalendarSyncTime: "09:00",
   companionMode: "general",
@@ -110,6 +122,7 @@ export function loadSettings(): CompanionSettings {
       model: normalizeModelId(parsed.model),
       googleClientId: parsed.googleClientId ?? DEFAULT_SETTINGS.googleClientId,
       googleCalendarId: parsed.googleCalendarId ?? DEFAULT_SETTINGS.googleCalendarId,
+      calendarTags: normalizeCalendarTags(parsed.calendarTags),
       autoDailyCalendarSync: parsed.autoDailyCalendarSync ?? DEFAULT_SETTINGS.autoDailyCalendarSync,
       dailyCalendarSyncTime: parsed.dailyCalendarSyncTime ?? DEFAULT_SETTINGS.dailyCalendarSyncTime,
       companionMode: normalizeCompanionMode(parsed.companionMode),
