@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useLayoutEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { listen } from "@tauri-apps/api/event";
 import Character from "./components/Character";
@@ -32,6 +32,27 @@ export default function App() {
 
   const chatOpenRef = useRef(false);
   const currentPassthrough = useRef(false);
+  const previousCharSize = useRef(effectiveCharSize);
+
+  // The chat bubble is anchored to the character's top-right edge. Preserve
+  // that anchor while switching between the normal and compact icon so the
+  // bubble opens at the same position regardless of which icon was clicked.
+  useLayoutEffect(() => {
+    const previous = previousCharSize.current;
+    if (previous === effectiveCharSize) return;
+    previousCharSize.current = effectiveCharSize;
+
+    setPosition((current) => {
+      const maxX = Math.max(0, window.innerWidth - effectiveCharSize);
+      const maxY = Math.max(0, window.innerHeight - effectiveCharSize);
+      const next = {
+        x: Math.max(0, Math.min(maxX, current.x + previous - effectiveCharSize)),
+        y: Math.max(0, Math.min(maxY, current.y)),
+      };
+      savePosition(next.x, next.y);
+      return next;
+    });
+  }, [effectiveCharSize]);
 
   // Keep the normal and compact launcher sizes on the same character element.
   // This preserves drag position and chat anchoring when the image changes.
