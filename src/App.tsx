@@ -53,12 +53,6 @@ export default function App() {
     });
   }, [effectiveCharSize]);
 
-  // Keep the normal and compact launcher sizes on the same character element.
-  // This preserves drag position and chat anchoring when the image changes.
-  useEffect(() => {
-    document.documentElement.style.setProperty("--char-size", `${effectiveCharSize}px`);
-  }, [effectiveCharSize]);
-
   // Global shortcuts always reveal the companion on the active Space.
   useEffect(() => {
     const unlisten = listen("show-chat", () => {
