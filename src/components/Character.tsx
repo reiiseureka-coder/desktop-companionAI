@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useLayoutEffect, useState, useCallback } from "react";
 
 interface Props {
   position: { x: number; y: number };
@@ -21,7 +21,9 @@ export default function Character({ position, onClick, onPositionChange, onPosit
   const [isDragging, setIsDragging] = useState(false);
   const suppressNextClick = useRef(false);
 
-  useEffect(() => {
+  // Sync the anchored position before paint. A normal effect allows one frame
+  // to render at the old compact position while the character is expanding.
+  useLayoutEffect(() => {
     setPos(position);
   }, [position.x, position.y]);
 
@@ -90,6 +92,8 @@ export default function Character({ position, onClick, onPositionChange, onPosit
       style={{
         left: `${pos.x}px`,
         top: `${pos.y}px`,
+        width: `${charSize}px`,
+        height: `${charSize}px`,
         cursor: isDragging ? "grabbing" : "pointer",
       }}
       onMouseDown={onMouseDown}
@@ -101,6 +105,7 @@ export default function Character({ position, onClick, onPositionChange, onPosit
         alt="AI Assistant"
         draggable={false}
         className="character-img"
+        style={{ width: `${charSize}px`, height: `${charSize}px` }}
       />
     </div>
   );

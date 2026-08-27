@@ -693,7 +693,7 @@ dependencies = [
 
 [[package]]
 name = "desktop-companion-ai"
-version = "0.2.1"
+version = "0.2.10"
 dependencies = [
  "libc",
  "objc",

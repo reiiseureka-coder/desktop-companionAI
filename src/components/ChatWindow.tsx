@@ -59,6 +59,8 @@ interface Props {
   currentImage: string | null;
   charSize: number;
   onSizeChange: (size: number) => void;
+  compactCharSize: number;
+  onCompactSizeChange: (size: number) => void;
   onToggleVisible: () => void;
 }
 
@@ -176,7 +178,8 @@ function getNextDailySyncDelay(syncTime: string): number {
 
 export default function ChatWindow({
   chatOpen, characterPosition, onClose, onImageChange,
-  currentImage, charSize, onSizeChange, onToggleVisible,
+  currentImage, charSize, onSizeChange, compactCharSize,
+  onCompactSizeChange, onToggleVisible,
 }: Props) {
   const savedSettings = loadSettings();
   const cachedSchedule = loadCalendarCache();
@@ -645,8 +648,8 @@ export default function ChatWindow({
         return;
       }
       const clipped = clipboard.slice(0, 12000);
-      setInput((current) => `${current}${current ? "\n\n" : ""}[選択・コピーした内容]\n${clipped}`);
-      setContextStatus("コピーした内容を追加しました");
+      setInput((current) => `${current}${current ? "\n\n" : ""}[クリップボードからペーストした内容]\n${clipped}`);
+      setContextStatus("クリップボードの内容をペーストしました");
       inputRef.current?.focus();
     } catch (error) {
       setContextStatus(String(error));
@@ -789,6 +792,19 @@ export default function ChatWindow({
                 max={200}
                 value={charSize}
                 onChange={(e) => onSizeChange(Number(e.target.value))}
+                className="settings-size-slider"
+              />
+            </div>
+            <div className="settings-row">
+              <span className="settings-label">
+                全画面用（待機時）サイズ ({compactCharSize}px)
+              </span>
+              <input
+                type="range"
+                min={24}
+                max={100}
+                value={compactCharSize}
+                onChange={(e) => onCompactSizeChange(Number(e.target.value))}
                 className="settings-size-slider"
               />
             </div>
@@ -1122,8 +1138,8 @@ export default function ChatWindow({
               <button className="btn-context" onClick={attachCurrentScreen} disabled={isLoading} title="現在の画面を添付">
                 ◉ 画面
               </button>
-              <button className="btn-context" onClick={insertClipboardContext} disabled={isLoading} title="コピーした文章を入力へ追加">
-                ⧉ コピー
+              <button className="btn-context" onClick={insertClipboardContext} disabled={isLoading} title="クリップボードの文章を入力欄へペースト">
+                ⧉ ペースト
               </button>
               {attachedImages.length > 0 && (
                 <button className="btn-context btn-context--active" onClick={() => { setAttachedImages([]); setContextStatus(null); }}>

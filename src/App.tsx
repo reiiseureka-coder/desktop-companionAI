@@ -1,9 +1,19 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useLayoutEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { listen } from "@tauri-apps/api/event";
 import Character from "./components/Character";
 import ChatWindow from "./components/ChatWindow";
-import { loadPosition, savePosition, loadCharacterImage, saveCharacterImage, clearCharacterImage, loadCharacterSize, saveCharacterSize } from "./utils/storage";
+import {
+  loadPosition,
+  savePosition,
+  loadCharacterImage,
+  saveCharacterImage,
+  clearCharacterImage,
+  loadCharacterSize,
+  saveCharacterSize,
+  loadCompactCharacterSize,
+  saveCompactCharacterSize,
+} from "./utils/storage";
 
 export default function App() {
   const [chatOpen, setChatOpen] = useState(true);
@@ -15,22 +25,62 @@ export default function App() {
   });
   const [characterImage, setCharacterImage] = useState<string | null>(() => loadCharacterImage());
   const [charSize, setCharSize] = useState<number>(() => loadCharacterSize());
+  const [compactCharSize, setCompactCharSize] = useState<number>(() =>
+    loadCompactCharacterSize(charSize)
+  );
+  const effectiveCharSize = chatOpen ? charSize : compactCharSize;
 
   const chatOpenRef = useRef(false);
   const currentPassthrough = useRef(false);
+  const previousCharSize = useRef(effectiveCharSize);
 
-  // Apply size CSS variable on mount
-  useEffect(() => {
-    document.documentElement.style.setProperty("--char-size", `${charSize}px`);
-  }, []);
+  // Preserve the character's right and bottom edges while switching sizes.
+  // The normal character therefore grows only toward the upper-left.
+  useLayoutEffect(() => {
+    const previous = previousCharSize.current;
+    if (previous === effectiveCharSize) return;
+    previousCharSize.current = effectiveCharSize;
 
-  // macOS global shortcut (Option+Space) opens the companion on the active Space.
+    setPosition((current) => {
+      const maxX = Math.max(0, window.innerWidth - effectiveCharSize);
+      const maxY = Math.max(0, window.innerHeight - effectiveCharSize);
+      const next = {
+        x: Math.max(0, Math.min(maxX, current.x + previous - effectiveCharSize)),
+        y: Math.max(0, Math.min(maxY, current.y + previous - effectiveCharSize)),
+      };
+      savePosition(next.x, next.y);
+      return next;
+    });
+  }, [effectiveCharSize]);
+
+  // Global shortcuts always reveal the companion on the active Space.
   useEffect(() => {
-    const unlisten = listen("toggle-chat", () => {
+    const unlisten = listen("show-chat", () => {
       setVisible(true);
-      setChatOpen((open) => !open);
+      setChatOpen(true);
     });
     return () => { unlisten.then((f) => f()); };
+  }, []);
+
+  // Verify the native shortcuts again after the webview is ready and whenever
+  // macOS brings the app back from sleep or another Space. This repairs a
+  // registration that was temporarily unavailable during application startup.
+  useEffect(() => {
+    const ensureShortcuts = () => {
+      invoke<string[]>("ensure_global_shortcuts").catch(() => {});
+    };
+
+    const initialRetry = window.setTimeout(ensureShortcuts, 750);
+    const periodicRetry = window.setInterval(ensureShortcuts, 10_000);
+    window.addEventListener("focus", ensureShortcuts);
+    document.addEventListener("visibilitychange", ensureShortcuts);
+
+    return () => {
+      window.clearTimeout(initialRetry);
+      window.clearInterval(periodicRetry);
+      window.removeEventListener("focus", ensureShortcuts);
+      document.removeEventListener("visibilitychange", ensureShortcuts);
+    };
   }, []);
 
   // Load saved position on mount
@@ -137,7 +187,11 @@ export default function App() {
   const handleSizeChange = useCallback((size: number) => {
     setCharSize(size);
     saveCharacterSize(size);
-    document.documentElement.style.setProperty("--char-size", `${size}px`);
+  }, []);
+
+  const handleCompactSizeChange = useCallback((size: number) => {
+    setCompactCharSize(size);
+    saveCompactCharacterSize(size);
   }, []);
 
   if (!visible) return null;
@@ -149,8 +203,8 @@ export default function App() {
         onClick={handleCharacterClick}
         onPositionChange={handlePositionChange}
         onPositionCommit={handlePositionCommit}
-        imageSrc={characterImage}
-        charSize={charSize}
+        imageSrc={chatOpen ? characterImage : "/fullscreen-launcher.png"}
+        charSize={effectiveCharSize}
       />
       <ChatWindow
         chatOpen={chatOpen}
@@ -160,6 +214,8 @@ export default function App() {
         currentImage={characterImage}
         charSize={charSize}
         onSizeChange={handleSizeChange}
+        compactCharSize={compactCharSize}
+        onCompactSizeChange={handleCompactSizeChange}
         onToggleVisible={handleToggleVisible}
       />
     </div>

@@ -2,6 +2,7 @@ const POSITION_KEY = "companion_position";
 const SETTINGS_KEY = "companion_settings";
 const IMAGE_KEY = "companion_image";
 const SIZE_KEY = "companion_size";
+const COMPACT_SIZE_KEY = "companion_compact_size";
 const CHAT_SIZE_KEY = "companion_chat_size";
 const CURRENT_SESSION_KEY = "companion_current_session";
 const SESSIONS_KEY = "companion_sessions";
@@ -195,6 +196,23 @@ export function loadCharacterSize(): number {
     return isNaN(n) ? 80 : n;
   } catch (_) {
     return 80;
+  }
+}
+
+export function saveCompactCharacterSize(size: number): void {
+  try {
+    localStorage.setItem(COMPACT_SIZE_KEY, String(size));
+  } catch (_) {}
+}
+
+export function loadCompactCharacterSize(normalSize = 80): number {
+  try {
+    const raw = localStorage.getItem(COMPACT_SIZE_KEY);
+    if (!raw) return Math.max(24, Math.round(normalSize / 2));
+    const n = parseInt(raw, 10);
+    return isNaN(n) ? Math.max(24, Math.round(normalSize / 2)) : n;
+  } catch (_) {
+    return Math.max(24, Math.round(normalSize / 2));
   }
 }
 
