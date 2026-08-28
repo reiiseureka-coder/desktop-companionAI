@@ -231,6 +231,7 @@ hdiutil create -volname "Shaolon AI" \
 `今日の予定` パネル側で以下を設定します。
 
 - `Google Client ID`
+- `Google Client Secret`
 - `Google Calendar ID`
 - `通知対象ラベル`
 - `毎日決まった時間に予定を更新`
@@ -244,11 +245,11 @@ hdiutil create -volname "Shaolon AI" \
 3. `OAuth consent screen` を設定
 4. `OAuth client ID` を作成
 5. 種類は `Desktop app` を選ぶ
-6. 発行された Client ID をアプリへ貼る
+6. 発行された Client ID と Client Secret をアプリへ貼る
 
 ### 注意
 
-現在の実装は Google のデスクトップアプリ向け OAuth 2.0 + PKCE を使います。認証画面はシステムブラウザで開き、結果はMac内の一時的なローカル接続でアプリへ戻します。
+現在の実装は Google のデスクトップアプリ向け OAuth 2.0 + PKCE を使います。認証画面はシステムブラウザで開き、結果はMac内の一時的なローカル接続でアプリへ戻します。Client ID と Client Secret はShaolon AIのローカル設定に保存され、Google OAuthのトークン交換にのみ利用します。
 
 ## 使い方
 
@@ -285,7 +286,7 @@ hdiutil create -volname "Shaolon AI" \
 - 登録した `【ラベル】` で始まる当日予定の確認
 - 通知対象ラベルの追加・削除
 - 手動更新
-- Google Client ID / Calendar ID の入力
+- Google Client ID / Client Secret / Calendar ID の入力
 - 毎日指定時刻の自動更新設定
 
 ## 動作概要
@@ -295,6 +296,8 @@ hdiutil create -volname "Shaolon AI" \
 1. フロントエンドから Tauri の `send_to_codex` を呼び出します。
 2. Rust 側で `codex exec` を起動します。
 3. Auto 実行が ON のときは `--approve-for-me`、OFF のときは `--sandbox read-only` を付けて実行します。
+   - `--approve-for-me` は許可審査先をユーザーではなくCodexの自動審査へ切り替え、`workspace-write` サンドボックス内の通常作業を都度確認なしで進めます。
+   - macOSの権限ダイアログ、認証情報の入力、危険性の高い操作などはAuto実行とは別扱いで、引き続きユーザー確認が必要です。
 4. 作業ディレクトリに非 ASCII 文字が含まれる場合は、一時ディレクトリにシンボリックリンクを作って Codex に渡します。
 5. JSON イベントを読み取り、最終応答を `codex-output` として返します。
 6. 正常終了時は `codex-done`、異常時は `codex-error` を返します。
@@ -351,8 +354,8 @@ hdiutil create -volname "Shaolon AI" \
 
 - 現状は macOS 前提です。
 - Codex CLI が利用できないと応答できません。
-- Auto 実行モードでは Codex がコマンド実行やファイル変更を進める可能性があります。
-- カレンダー連携には Google Client ID の設定が必要です。
+- Auto 実行モードでは通常作業の許可要求をCodexの自動審査へ送り、`workspace-write` の範囲でコマンド実行やファイル変更を進めます。macOS側の権限確認や危険性の高い操作は引き続き確認が必要です。
+- カレンダー連携には Google Client ID と Client Secret の設定が必要です。
 - カレンダー通知はアプリ起動中のみ動作します。
 - 自動更新はアプリ起動中にのみスケジュールされます。
 - `.dmg` は環境によって Tauri の標準ビルドで失敗する場合があります。

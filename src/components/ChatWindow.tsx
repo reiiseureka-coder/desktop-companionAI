@@ -40,6 +40,7 @@ interface Props {
 let msgId = 0;
 
 const CONTEXT_WINDOW = 6;
+const CALENDAR_REQUEST_TIMEOUT_MS = 45_000;
 const MTG_NOTIFICATIONS = [
   "そろそろMTGだよ",
   "あと5分でMTGだよ",
@@ -67,6 +68,22 @@ function getTodayDateKey(now = new Date()): string {
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timeoutId);
+        reject(error);
+      }
+    );
+  });
 }
 
 function getDayRange(now = new Date()): { start: Date; end: Date } {
@@ -375,14 +392,18 @@ export default function ChatWindow({
         throw new Error("Google Client Secret を設定してください");
       }
       const { start, end } = getDayRange();
-      const responseBody = await invoke<string>("google_calendar_events", {
-        clientId: googleClientId.trim(),
-        clientSecret: googleClientSecret.trim(),
-        calendarId: googleCalendarId.trim() || "primary",
-        timeMin: start.toISOString(),
-        timeMax: end.toISOString(),
-        interactive,
-      });
+      const responseBody = await withTimeout(
+        invoke<string>("google_calendar_events", {
+          clientId: googleClientId.trim(),
+          clientSecret: googleClientSecret.trim(),
+          calendarId: googleCalendarId.trim() || "primary",
+          timeMin: start.toISOString(),
+          timeMax: end.toISOString(),
+          interactive,
+        }),
+        CALENDAR_REQUEST_TIMEOUT_MS,
+        "Google Calendar の応答がタイムアウトしました。ネットワーク接続を確認してください"
+      );
       const payload = JSON.parse(responseBody) as {
         items?: Array<{
           id?: string;
@@ -403,7 +424,6 @@ export default function ChatWindow({
         lastSyncedAt: syncedAt,
         items,
       });
-      await ensureNotificationPermission();
     } catch (error) {
       const message = error instanceof Error
         ? error.message
@@ -414,7 +434,7 @@ export default function ChatWindow({
     } finally {
       setScheduleLoading(false);
     }
-  }, [calendarTags, ensureNotificationPermission, googleCalendarId, googleClientId, googleClientSecret]);
+  }, [calendarTags, googleCalendarId, googleClientId, googleClientSecret]);
 
   useEffect(() => {
     if (!showTodaySchedule) return;

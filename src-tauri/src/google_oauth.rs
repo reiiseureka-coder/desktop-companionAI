@@ -394,6 +394,7 @@ fn fetch_calendar_events(
     time_min: &str,
     time_max: &str,
 ) -> Result<String, String> {
+    oauth_log("calendar API request started");
     let mut url = Url::parse("https://www.googleapis.com/calendar/v3/calendars/")
         .map_err(|error| format!("Google Calendar URLを作成できません: {error}"))?;
     url.path_segments_mut()
@@ -430,6 +431,7 @@ fn fetch_calendar_events(
 
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        oauth_log("calendar API transport failed");
         return Err(if detail.is_empty() {
             "Google Calendar に接続できませんでした".to_string()
         } else {
@@ -443,8 +445,10 @@ fn fetch_calendar_events(
         .rsplit_once('\n')
         .ok_or_else(|| "Google Calendar の応答状態を確認できませんでした".to_string())?;
     if status != "200" {
+        oauth_log(&format!("calendar API returned HTTP {status}"));
         return Err(calendar_error_message(body, status));
     }
+    oauth_log("calendar API request succeeded");
     Ok(body.to_string())
 }
 
