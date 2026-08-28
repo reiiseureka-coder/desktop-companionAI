@@ -238,6 +238,8 @@ hdiutil create -volname "Shaolon AI" \
 
 通常は `Google Calendar ID` は `primary` のままで構いません。
 
+`更新` 後にメインカレンダーが見つからない場合は、認証情報を破棄して次回の更新時にGoogleアカウントの選択画面を開きます。予定を確認したいGoogleアカウントを選び直してください。取得に失敗した場合でも自動で連続再試行はせず、画面にエラーを表示して手動更新を待ちます。
+
 ### Google Cloud Console 側の準備
 
 1. プロジェクトを作成

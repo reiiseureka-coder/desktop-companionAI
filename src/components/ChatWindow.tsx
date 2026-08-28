@@ -238,6 +238,8 @@ export default function ChatWindow({
   const homeDirRef = useRef<string>("");
   const scheduleTimeoutsRef = useRef<number[]>([]);
   const notifiedEventKeysRef = useRef<Set<string>>(new Set());
+  const scheduleRequestInFlightRef = useRef(false);
+  const calendarAutoRefreshAttemptedRef = useRef(false);
 
   useEffect(() => {
     homeDir().then((home) => {
@@ -381,6 +383,8 @@ export default function ChatWindow({
   }, []);
 
   const refreshSchedule = useCallback(async (interactive: boolean) => {
+    if (scheduleRequestInFlightRef.current) return;
+    scheduleRequestInFlightRef.current = true;
     setScheduleLoading(true);
     setScheduleError(null);
 
@@ -432,13 +436,22 @@ export default function ChatWindow({
           : "予定の取得に失敗しました";
       setScheduleError(message);
     } finally {
+      scheduleRequestInFlightRef.current = false;
       setScheduleLoading(false);
     }
   }, [calendarTags, googleCalendarId, googleClientId, googleClientSecret]);
 
   useEffect(() => {
-    if (!showTodaySchedule) return;
-    if (scheduleLastSyncedAt || scheduleLoading) return;
+    if (!showTodaySchedule) {
+      calendarAutoRefreshAttemptedRef.current = false;
+      return;
+    }
+    if (
+      scheduleLastSyncedAt
+      || scheduleLoading
+      || calendarAutoRefreshAttemptedRef.current
+    ) return;
+    calendarAutoRefreshAttemptedRef.current = true;
     void refreshSchedule(false);
   }, [showTodaySchedule, scheduleLastSyncedAt, scheduleLoading, refreshSchedule]);
 
@@ -562,12 +575,20 @@ export default function ChatWindow({
     [sendMessage, onClose]
   );
 
+  const resizeInput = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, []);
+
+  useEffect(() => {
+    resizeInput();
+  }, [input, resizeInput]);
+
   const handleInput = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     justEndedCompositionRef.current = false;
     setInput(e.target.value);
-    const el = e.target;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }, []);
 
   const attachCurrentScreen = useCallback(async () => {
@@ -642,8 +663,10 @@ export default function ChatWindow({
       });
     }
     setMessages([]);
+    setInput("");
     saveCurrentSession([]);
-  }, [messages]);
+    window.requestAnimationFrame(resizeInput);
+  }, [messages, resizeInput]);
 
   const restoreSession = useCallback((session: Session) => {
     setMessages(session.messages.map((m) => ({ ...m, streaming: false })));

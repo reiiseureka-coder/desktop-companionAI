@@ -716,6 +716,7 @@ html, body {
 
 .chat-input {
   flex: 1;
+  height: 36px;
   background: white;
   border: 1.5px solid rgba(124, 111, 247, 0.22);
   border-radius: 14px;

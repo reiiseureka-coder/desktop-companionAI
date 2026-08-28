@@ -308,7 +308,7 @@ fn authorize_in_browser(
         .append_pair("code_challenge_method", "S256")
         .append_pair("state", &state)
         .append_pair("access_type", "offline")
-        .append_pair("prompt", "consent");
+        .append_pair("prompt", "consent select_account");
 
     tauri::api::shell::open(&app.shell_scope(), auth_url.as_str(), None)
         .map_err(|error| format!("Google認証ページを開けません: {error}"))?;
@@ -491,11 +491,20 @@ pub async fn google_calendar_events(
         match fetch_calendar_events(&token, &calendar_id, &time_min, &time_max) {
             Ok(body) => Ok(body),
             Err(error) => {
-                if error.contains("(401)") {
+                let primary_not_found = error.contains("(404)")
+                    && (calendar_id.trim().is_empty()
+                        || calendar_id.trim().eq_ignore_ascii_case("primary"));
+                if error.contains("(401)") || primary_not_found {
                     if let Ok(mut guard) = tokens.lock() {
                         guard.remove(client_id.trim());
                     }
-                    oauth_log("calendar API returned 401; cached token cleared");
+                    oauth_log("calendar API authorization or primary calendar failed; cached token cleared");
+                }
+                if primary_not_found {
+                    return Err(
+                        "認証したGoogleアカウントのメインカレンダーを参照できません。もう一度「更新」を押し、予定を確認したいGoogleアカウントを選択してください。"
+                            .to_string(),
+                    );
                 }
                 Err(error)
             }
