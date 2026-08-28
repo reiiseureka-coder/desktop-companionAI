@@ -252,6 +252,7 @@ fn main() {
             read_clipboard_text,
             ensure_global_shortcuts,
             google_oauth::google_calendar_access_token,
+            google_oauth::google_calendar_events,
             google_oauth::google_calendar_clear_token,
         ])
         .run(tauri::generate_context!())

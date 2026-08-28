@@ -406,7 +406,9 @@ html, body {
   gap: 10px;
   padding: 14px 14px 16px;
   background: #fafaff;
-  min-height: 120px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .schedule-panel-header {
@@ -491,7 +493,7 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  overflow-y: auto;
+  flex-shrink: 0;
   padding-right: 2px;
 }
 

@@ -349,16 +349,6 @@ export default function ChatWindow({
     };
   }, []);
 
-  const ensureGoogleToken = useCallback(async (interactive: boolean): Promise<string> => {
-    if (!googleClientId.trim()) {
-      throw new Error("Google Client ID を設定してください");
-    }
-    return invoke<string>("google_calendar_access_token", {
-      clientId: googleClientId.trim(),
-      interactive,
-    });
-  }, [googleClientId]);
-
   const ensureNotificationPermission = useCallback(async (): Promise<boolean> => {
     try {
       const granted = await isPermissionGranted();
@@ -375,36 +365,18 @@ export default function ChatWindow({
     setScheduleError(null);
 
     try {
-      const token = await ensureGoogleToken(interactive);
+      if (!googleClientId.trim()) {
+        throw new Error("Google Client ID を設定してください");
+      }
       const { start, end } = getDayRange();
-      const calendarId = encodeURIComponent(googleCalendarId.trim() || "primary");
-      const params = new URLSearchParams({
+      const responseBody = await invoke<string>("google_calendar_events", {
+        clientId: googleClientId.trim(),
+        calendarId: googleCalendarId.trim() || "primary",
         timeMin: start.toISOString(),
         timeMax: end.toISOString(),
-        singleEvents: "true",
-        orderBy: "startTime",
-        fields: "items(id,summary,start,end)",
+        interactive,
       });
-
-      const response = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?${params.toString()}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          await invoke("google_calendar_clear_token", {
-            clientId: googleClientId.trim(),
-          }).catch(() => {});
-        }
-        throw new Error(`Google Calendar の取得に失敗しました (${response.status})`);
-      }
-
-      const payload = await response.json() as {
+      const payload = JSON.parse(responseBody) as {
         items?: Array<{
           id?: string;
           summary?: string;
@@ -426,12 +398,16 @@ export default function ChatWindow({
       });
       await ensureNotificationPermission();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "予定の取得に失敗しました";
+      const message = error instanceof Error
+        ? error.message
+        : typeof error === "string"
+          ? error
+          : "予定の取得に失敗しました";
       setScheduleError(message);
     } finally {
       setScheduleLoading(false);
     }
-  }, [calendarTags, ensureGoogleToken, ensureNotificationPermission, googleCalendarId]);
+  }, [calendarTags, ensureNotificationPermission, googleCalendarId, googleClientId]);
 
   useEffect(() => {
     if (!showTodaySchedule) return;
@@ -983,6 +959,10 @@ export default function ChatWindow({
                 : "通知対象ラベルが未設定です"}
             </div>
 
+            {googleClientId.trim() && scheduleError && (
+              <div className="schedule-error">{scheduleError}</div>
+            )}
+
             <div className="schedule-config">
               <div className="settings-row settings-row--column">
                 <div className="settings-label-row">
@@ -1076,10 +1056,6 @@ export default function ChatWindow({
               <div className="schedule-empty">
                 Google Client ID を設定すると予定を読み込めます
               </div>
-            )}
-
-            {googleClientId.trim() && scheduleError && (
-              <div className="schedule-error">{scheduleError}</div>
             )}
 
             {googleClientId.trim() && !scheduleError && scheduleItems.length === 0 && !scheduleLoading && (

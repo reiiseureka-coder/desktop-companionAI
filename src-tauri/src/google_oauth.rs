@@ -3,6 +3,7 @@ use rand::{distributions::Alphanumeric, Rng};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::process::{Command, Stdio};
@@ -15,6 +16,7 @@ use url::Url;
 const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const CALENDAR_SCOPE: &str = "https://www.googleapis.com/auth/calendar.readonly";
+const OAUTH_LOG_PATH: &str = "/tmp/shaolon-google-oauth.log";
 
 #[derive(Clone)]
 struct CachedToken {
@@ -66,12 +68,25 @@ fn form_body(fields: &[(&str, &str)]) -> String {
     serializer.finish()
 }
 
+fn oauth_log(message: &str) {
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(OAUTH_LOG_PATH)
+    {
+        let _ = writeln!(file, "{} {message}", unix_now());
+    }
+}
+
 fn post_token_form(body: String) -> Result<TokenResponse, String> {
     let mut child = Command::new("/usr/bin/curl")
         .args([
             "--silent",
             "--show-error",
-            "--fail-with-body",
+            "--connect-timeout",
+            "15",
+            "--max-time",
+            "30",
             "--request",
             "POST",
             "--header",
@@ -86,25 +101,41 @@ fn post_token_form(body: String) -> Result<TokenResponse, String> {
         .spawn()
         .map_err(|error| format!("Google認証通信を開始できません: {error}"))?;
 
-    child
+    let mut stdin = child
         .stdin
-        .as_mut()
-        .ok_or_else(|| "Google認証通信の入力を開けません".to_string())?
+        .take()
+        .ok_or_else(|| "Google認証通信の入力を開けません".to_string())?;
+    stdin
         .write_all(body.as_bytes())
         .map_err(|error| format!("Google認証情報を送信できません: {error}"))?;
+    drop(stdin);
 
     let output = child
         .wait_with_output()
         .map_err(|error| format!("Google認証通信を完了できません: {error}"))?;
 
-    let response: TokenResponse = serde_json::from_slice(&output.stdout)
-        .map_err(|_| "Google認証サーバーから正しい応答が返りませんでした".to_string())?;
+    if !output.status.success() && output.stdout.is_empty() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        oauth_log(&format!("token request failed: {detail}"));
+        return Err(if detail.is_empty() {
+            "Google認証サーバーに接続できませんでした".to_string()
+        } else {
+            format!("Google認証通信に失敗しました: {detail}")
+        });
+    }
+
+    let response: TokenResponse = serde_json::from_slice(&output.stdout).map_err(|_| {
+        oauth_log("token response was not valid JSON");
+        "Google認証サーバーから正しい応答が返りませんでした".to_string()
+    })?;
 
     if !output.status.success() || response.error.is_some() {
-        return Err(response
+        let message = response
             .error_description
             .or(response.error)
-            .unwrap_or_else(|| "Google認証に失敗しました".to_string()));
+            .unwrap_or_else(|| "Google認証に失敗しました".to_string());
+        oauth_log(&format!("token response rejected: {message}"));
+        return Err(message);
     }
 
     Ok(response)
@@ -221,9 +252,10 @@ fn wait_for_authorization_callback(
                 }
 
                 if let Some(code) = params.get("code") {
+                    oauth_log("authorization callback received");
                     write_browser_response(
                         &mut stream,
-                        browser_response("カレンダーと接続できました。Shaolon AIに戻ってください。", true),
+                        browser_response("認証情報を受け取りました。Shaolon AIで接続処理を続けています。", true),
                     );
                     return Ok(AuthorizationCode {
                         code: code.clone(),
@@ -271,7 +303,10 @@ fn authorize_in_browser(client_id: &str, app: &AppHandle) -> Result<CachedToken,
         .map_err(|error| format!("Google認証ページを開けません: {error}"))?;
 
     let authorization = wait_for_authorization_callback(listener, state, redirect_uri, code_verifier)?;
-    exchange_authorization_code(client_id, authorization)
+    oauth_log("exchanging authorization code");
+    let token = exchange_authorization_code(client_id, authorization)?;
+    oauth_log("authorization code exchange succeeded");
+    Ok(token)
 }
 
 fn get_access_token(
@@ -316,7 +351,83 @@ fn get_access_token(
     if let Ok(mut guard) = tokens.lock() {
         guard.insert(client_id, token);
     }
+    oauth_log("token cached in application memory");
     Ok(access_token)
+}
+
+fn calendar_error_message(body: &str, status: &str) -> String {
+    let detail = serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|value| {
+            value
+                .pointer("/error/message")
+                .and_then(|value| value.as_str())
+                .map(str::to_string)
+        });
+    match detail {
+        Some(detail) => format!("Google Calendar の取得に失敗しました ({status}): {detail}"),
+        None => format!("Google Calendar の取得に失敗しました ({status})"),
+    }
+}
+
+fn fetch_calendar_events(
+    access_token: &str,
+    calendar_id: &str,
+    time_min: &str,
+    time_max: &str,
+) -> Result<String, String> {
+    let mut url = Url::parse("https://www.googleapis.com/calendar/v3/calendars/")
+        .map_err(|error| format!("Google Calendar URLを作成できません: {error}"))?;
+    url.path_segments_mut()
+        .map_err(|_| "Google Calendar URLを作成できません".to_string())?
+        .push(if calendar_id.trim().is_empty() {
+            "primary"
+        } else {
+            calendar_id.trim()
+        })
+        .push("events");
+    url.query_pairs_mut()
+        .append_pair("timeMin", time_min)
+        .append_pair("timeMax", time_max)
+        .append_pair("singleEvents", "true")
+        .append_pair("orderBy", "startTime")
+        .append_pair("fields", "items(id,summary,start,end)");
+
+    let output = Command::new("/usr/bin/curl")
+        .args([
+            "--silent",
+            "--show-error",
+            "--connect-timeout",
+            "15",
+            "--max-time",
+            "30",
+            "--header",
+            &format!("Authorization: Bearer {access_token}"),
+            "--write-out",
+            "\n%{http_code}",
+            url.as_str(),
+        ])
+        .output()
+        .map_err(|error| format!("Google Calendar 通信を開始できません: {error}"))?;
+
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if detail.is_empty() {
+            "Google Calendar に接続できませんでした".to_string()
+        } else {
+            format!("Google Calendar 通信に失敗しました: {detail}")
+        });
+    }
+
+    let output = String::from_utf8(output.stdout)
+        .map_err(|_| "Google Calendar から正しい応答が返りませんでした".to_string())?;
+    let (body, status) = output
+        .rsplit_once('\n')
+        .ok_or_else(|| "Google Calendar の応答状態を確認できませんでした".to_string())?;
+    if status != "200" {
+        return Err(calendar_error_message(body, status));
+    }
+    Ok(body.to_string())
 }
 
 #[tauri::command]
@@ -332,6 +443,36 @@ pub async fn google_calendar_access_token(
     })
     .await
     .map_err(|error| format!("Google認証処理に失敗しました: {error}"))?
+}
+
+#[tauri::command]
+pub async fn google_calendar_events(
+    client_id: String,
+    calendar_id: String,
+    time_min: String,
+    time_max: String,
+    interactive: bool,
+    app: AppHandle,
+    state: State<'_, GoogleOAuthState>,
+) -> Result<String, String> {
+    let tokens = state.tokens.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let token = get_access_token(client_id.clone(), interactive, app, tokens.clone())?;
+        match fetch_calendar_events(&token, &calendar_id, &time_min, &time_max) {
+            Ok(body) => Ok(body),
+            Err(error) => {
+                if error.contains("(401)") {
+                    if let Ok(mut guard) = tokens.lock() {
+                        guard.remove(client_id.trim());
+                    }
+                    oauth_log("calendar API returned 401; cached token cleared");
+                }
+                Err(error)
+            }
+        }
+    })
+    .await
+    .map_err(|error| format!("Google Calendar 処理に失敗しました: {error}"))?
 }
 
 #[tauri::command]
