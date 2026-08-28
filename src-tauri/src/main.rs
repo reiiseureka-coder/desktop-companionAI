@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod codex;
+mod google_oauth;
 
 use std::io::Write;
 use std::process::Command;
@@ -212,6 +213,7 @@ fn read_clipboard_text() -> Result<String, String> {
 
 fn main() {
     tauri::Builder::default()
+        .manage(google_oauth::GoogleOAuthState::default())
         .setup(|app| {
             // macOS: run as accessory (no Dock icon, no menu bar takeover)
             #[cfg(target_os = "macos")]
@@ -249,6 +251,8 @@ fn main() {
             capture_current_screen,
             read_clipboard_text,
             ensure_global_shortcuts,
+            google_oauth::google_calendar_access_token,
+            google_oauth::google_calendar_clear_token,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

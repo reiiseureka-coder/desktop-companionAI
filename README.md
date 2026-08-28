@@ -64,7 +64,7 @@ desktop-companionAI/
 - Desktop shell: Tauri v1
 - Backend: Rust
 - AI 実行: Codex CLI
-- Calendar 連携: Google Identity Services + Google Calendar REST API
+- Calendar 連携: Google OAuth 2.0 for Desktop Apps + Google Calendar REST API
 - 通知: Tauri notification API
 
 ## セットアップ
@@ -243,13 +243,12 @@ hdiutil create -volname "Shaolon AI" \
 2. `Google Calendar API` を有効化
 3. `OAuth consent screen` を設定
 4. `OAuth client ID` を作成
-5. 種類は `Web application` を選ぶ
+5. 種類は `Desktop app` を選ぶ
 6. 発行された Client ID をアプリへ貼る
 
 ### 注意
 
-現在の実装は Google Identity Services の Web 向けトークンフローを使っています。  
-ローカル実行では扱いやすい一方で、配布形態や Google 側の origin 制約によっては認証が通らない場合があります。その場合はデスクトップ向け OAuth フローへの切り替えが必要です。
+現在の実装は Google のデスクトップアプリ向け OAuth 2.0 + PKCE を使います。認証画面はシステムブラウザで開き、結果はMac内の一時的なローカル接続でアプリへ戻します。
 
 ## 使い方
 
@@ -303,7 +302,7 @@ hdiutil create -volname "Shaolon AI" \
 
 ### カレンダー予定
 
-1. Google Identity Services でアクセストークンを取得します。
+1. システムブラウザでGoogleのデスクトップOAuth認証を行い、PKCEでアクセストークンを取得します。
 2. Google Calendar API から当日予定を取得します。
 3. タイトルが登録済みの `【ラベル】` で始まるイベントだけ抽出します。
 4. `今日の予定` パネルに `開始時刻 + タイトル` を一覧表示します。

@@ -693,15 +693,19 @@ dependencies = [
 
 [[package]]
 name = "desktop-companion-ai"
-version = "0.2.11"
+version = "0.2.12"
 dependencies = [
+ "base64 0.22.1",
  "libc",
  "objc",
+ "rand 0.8.5",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tokio",
+ "url",
 ]
 
 [[package]]

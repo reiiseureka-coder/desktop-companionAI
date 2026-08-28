@@ -17,33 +17,6 @@ import {
   COMPANION_MODES, CompanionMode, ProactiveLevel,
 } from "../utils/storage";
 
-declare global {
-  interface Window {
-    google?: {
-      accounts?: {
-        oauth2?: {
-          initTokenClient: (config: {
-            client_id: string;
-            scope: string;
-            callback: (response: GoogleTokenResponse) => void;
-          }) => GoogleTokenClient;
-        };
-      };
-    };
-  }
-}
-
-interface GoogleTokenClient {
-  callback: (response: GoogleTokenResponse) => void;
-  requestAccessToken: (options?: { prompt?: string }) => void;
-}
-
-interface GoogleTokenResponse {
-  access_token?: string;
-  error?: string;
-  error_description?: string;
-}
-
 interface Message {
   id: number;
   role: "user" | "assistant" | "error";
@@ -67,7 +40,6 @@ interface Props {
 let msgId = 0;
 
 const CONTEXT_WINDOW = 6;
-const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
 const MTG_NOTIFICATIONS = [
   "そろそろMTGだよ",
   "あと5分でMTGだよ",
@@ -234,7 +206,6 @@ export default function ChatWindow({
   );
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [scheduleLoading, setScheduleLoading] = useState(false);
-  const [googleReady, setGoogleReady] = useState(Boolean(window.google?.accounts?.oauth2));
   const [attachedImages, setAttachedImages] = useState<string[]>([]);
   const [contextStatus, setContextStatus] = useState<string | null>(null);
 
@@ -247,9 +218,6 @@ export default function ChatWindow({
   const isComposingRef = useRef(false);
   const justEndedCompositionRef = useRef(false);
   const homeDirRef = useRef<string>("");
-  const googleTokenClientRef = useRef<GoogleTokenClient | null>(null);
-  const accessTokenRef = useRef<string | null>(null);
-  const tokenClientIdRef = useRef<string>("");
   const scheduleTimeoutsRef = useRef<number[]>([]);
   const notifiedEventKeysRef = useRef<Set<string>>(new Set());
 
@@ -263,16 +231,6 @@ export default function ChatWindow({
   useEffect(() => {
     if (chatOpen && !showTodaySchedule) inputRef.current?.focus();
   }, [chatOpen, showTodaySchedule]);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      if (window.google?.accounts?.oauth2) {
-        setGoogleReady(true);
-        window.clearInterval(interval);
-      }
-    }, 300);
-    return () => window.clearInterval(interval);
-  }, []);
 
   useEffect(() => {
     const el = inputRef.current;
@@ -395,38 +353,9 @@ export default function ChatWindow({
     if (!googleClientId.trim()) {
       throw new Error("Google Client ID を設定してください");
     }
-    if (!window.google?.accounts?.oauth2) {
-      throw new Error("Google連携の読み込みがまだ完了していません");
-    }
-    if (accessTokenRef.current) return accessTokenRef.current;
-
-    if (!googleTokenClientRef.current || tokenClientIdRef.current !== googleClientId.trim()) {
-      googleTokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
-        client_id: googleClientId.trim(),
-        scope: GOOGLE_CALENDAR_SCOPE,
-        callback: () => {},
-      });
-      tokenClientIdRef.current = googleClientId.trim();
-    }
-
-    return new Promise<string>((resolve, reject) => {
-      if (!googleTokenClientRef.current) {
-        reject(new Error("Googleトークンクライアントを初期化できませんでした"));
-        return;
-      }
-
-      googleTokenClientRef.current.callback = (response: GoogleTokenResponse) => {
-        if (response.error || !response.access_token) {
-          reject(new Error(response.error_description ?? response.error ?? "Google認証に失敗しました"));
-          return;
-        }
-        accessTokenRef.current = response.access_token;
-        resolve(response.access_token);
-      };
-
-      googleTokenClientRef.current.requestAccessToken({
-        prompt: interactive ? "consent" : "",
-      });
+    return invoke<string>("google_calendar_access_token", {
+      clientId: googleClientId.trim(),
+      interactive,
     });
   }, [googleClientId]);
 
@@ -468,7 +397,9 @@ export default function ChatWindow({
 
       if (!response.ok) {
         if (response.status === 401) {
-          accessTokenRef.current = null;
+          await invoke("google_calendar_clear_token", {
+            clientId: googleClientId.trim(),
+          }).catch(() => {});
         }
         throw new Error(`Google Calendar の取得に失敗しました (${response.status})`);
       }
@@ -1039,7 +970,7 @@ export default function ChatWindow({
               <button
                 className="btn-pick btn-pick--small"
                 onClick={() => void refreshSchedule(true)}
-                disabled={scheduleLoading || !googleReady}
+                disabled={scheduleLoading}
                 title="手動で更新"
               >
                 {scheduleLoading ? "更新中…" : "更新"}
@@ -1101,12 +1032,12 @@ export default function ChatWindow({
                 <input
                   className="settings-text-input"
                   value={googleClientId}
-                  onChange={(e) => {
-                    setGoogleClientId(e.target.value);
-                    accessTokenRef.current = null;
-                  }}
+                  onChange={(e) => setGoogleClientId(e.target.value)}
                   placeholder="Google OAuth Client ID"
                 />
+                <div className="schedule-tag-help">
+                  更新を押すとSafariまたはChromeでGoogle認証が開きます。
+                </div>
               </div>
               <div className="settings-row settings-row--column">
                 <div className="settings-label-row">
