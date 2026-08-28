@@ -61,6 +61,7 @@ export interface CompanionSettings {
   systemPrompt: string;
   model: ModelId;
   googleClientId: string;
+  googleClientSecret: string;
   googleCalendarId: string;
   calendarTags: string[];
   autoDailyCalendarSync: boolean;
@@ -93,6 +94,7 @@ const DEFAULT_SETTINGS: CompanionSettings = {
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   model: DEFAULT_MODEL,
   googleClientId: "",
+  googleClientSecret: "",
   googleCalendarId: "primary",
   calendarTags: [...DEFAULT_CALENDAR_TAGS],
   autoDailyCalendarSync: false,
@@ -121,6 +123,7 @@ export function loadSettings(): CompanionSettings {
       systemPrompt: parsed.systemPrompt ?? DEFAULT_SETTINGS.systemPrompt,
       model: normalizeModelId(parsed.model),
       googleClientId: parsed.googleClientId ?? DEFAULT_SETTINGS.googleClientId,
+      googleClientSecret: parsed.googleClientSecret ?? DEFAULT_SETTINGS.googleClientSecret,
       googleCalendarId: parsed.googleCalendarId ?? DEFAULT_SETTINGS.googleCalendarId,
       calendarTags: normalizeCalendarTags(parsed.calendarTags),
       autoDailyCalendarSync: parsed.autoDailyCalendarSync ?? DEFAULT_SETTINGS.autoDailyCalendarSync,

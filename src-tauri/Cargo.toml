@@ -1,6 +1,6 @@
 [package]
 name = "desktop-companion-ai"
-version = "0.2.13"
+version = "0.2.14"
 description = "Desktop Companion AI with Codex integration"
 authors = []
 license = ""

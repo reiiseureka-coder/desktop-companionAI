@@ -143,10 +143,12 @@ fn post_token_form(body: String) -> Result<TokenResponse, String> {
 
 fn exchange_authorization_code(
     client_id: &str,
+    client_secret: &str,
     authorization: AuthorizationCode,
 ) -> Result<CachedToken, String> {
     let response = post_token_form(form_body(&[
         ("client_id", client_id),
+        ("client_secret", client_secret),
         ("code", &authorization.code),
         ("code_verifier", &authorization.code_verifier),
         ("grant_type", "authorization_code"),
@@ -164,9 +166,14 @@ fn exchange_authorization_code(
     })
 }
 
-fn refresh_access_token(client_id: &str, refresh_token: &str) -> Result<CachedToken, String> {
+fn refresh_access_token(
+    client_id: &str,
+    client_secret: &str,
+    refresh_token: &str,
+) -> Result<CachedToken, String> {
     let response = post_token_form(form_body(&[
         ("client_id", client_id),
+        ("client_secret", client_secret),
         ("refresh_token", refresh_token),
         ("grant_type", "refresh_token"),
     ]))?;
@@ -274,7 +281,11 @@ fn wait_for_authorization_callback(
     Err("Google認証がタイムアウトしました。もう一度更新を押してください".to_string())
 }
 
-fn authorize_in_browser(client_id: &str, app: &AppHandle) -> Result<CachedToken, String> {
+fn authorize_in_browser(
+    client_id: &str,
+    client_secret: &str,
+    app: &AppHandle,
+) -> Result<CachedToken, String> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .map_err(|error| format!("Google認証用の受付を開けません: {error}"))?;
     let port = listener
@@ -304,13 +315,14 @@ fn authorize_in_browser(client_id: &str, app: &AppHandle) -> Result<CachedToken,
 
     let authorization = wait_for_authorization_callback(listener, state, redirect_uri, code_verifier)?;
     oauth_log("exchanging authorization code");
-    let token = exchange_authorization_code(client_id, authorization)?;
+    let token = exchange_authorization_code(client_id, client_secret, authorization)?;
     oauth_log("authorization code exchange succeeded");
     Ok(token)
 }
 
 fn get_access_token(
     client_id: String,
+    client_secret: String,
     interactive: bool,
     app: AppHandle,
     tokens: Arc<Mutex<HashMap<String, CachedToken>>>,
@@ -322,6 +334,10 @@ fn get_access_token(
     if !client_id.ends_with(".apps.googleusercontent.com") {
         return Err("Google Client ID の形式が正しくありません".to_string());
     }
+    let client_secret = client_secret.trim().to_string();
+    if client_secret.is_empty() {
+        return Err("Google Client Secret を設定してください".to_string());
+    }
 
     let cached = tokens.lock().ok().and_then(|guard| guard.get(&client_id).cloned());
     if let Some(token) = cached {
@@ -329,7 +345,9 @@ fn get_access_token(
             return Ok(token.access_token);
         }
         if let Some(refresh_token) = token.refresh_token {
-            if let Ok(refreshed) = refresh_access_token(&client_id, &refresh_token) {
+            if let Ok(refreshed) =
+                refresh_access_token(&client_id, &client_secret, &refresh_token)
+            {
                 let access_token = refreshed.access_token.clone();
                 if let Ok(mut guard) = tokens.lock() {
                     guard.insert(client_id.clone(), refreshed);
@@ -346,7 +364,7 @@ fn get_access_token(
         return Err("「更新」を押してGoogleカレンダーを認証してください".to_string());
     }
 
-    let token = authorize_in_browser(&client_id, &app)?;
+    let token = authorize_in_browser(&client_id, &client_secret, &app)?;
     let access_token = token.access_token.clone();
     if let Ok(mut guard) = tokens.lock() {
         guard.insert(client_id, token);
@@ -433,13 +451,14 @@ fn fetch_calendar_events(
 #[tauri::command]
 pub async fn google_calendar_access_token(
     client_id: String,
+    client_secret: String,
     interactive: bool,
     app: AppHandle,
     state: State<'_, GoogleOAuthState>,
 ) -> Result<String, String> {
     let tokens = state.tokens.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        get_access_token(client_id, interactive, app, tokens)
+        get_access_token(client_id, client_secret, interactive, app, tokens)
     })
     .await
     .map_err(|error| format!("Google認証処理に失敗しました: {error}"))?
@@ -448,6 +467,7 @@ pub async fn google_calendar_access_token(
 #[tauri::command]
 pub async fn google_calendar_events(
     client_id: String,
+    client_secret: String,
     calendar_id: String,
     time_min: String,
     time_max: String,
@@ -457,7 +477,13 @@ pub async fn google_calendar_events(
 ) -> Result<String, String> {
     let tokens = state.tokens.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let token = get_access_token(client_id.clone(), interactive, app, tokens.clone())?;
+        let token = get_access_token(
+            client_id.clone(),
+            client_secret,
+            interactive,
+            app,
+            tokens.clone(),
+        )?;
         match fetch_calendar_events(&token, &calendar_id, &time_min, &time_max) {
             Ok(body) => Ok(body),
             Err(error) => {

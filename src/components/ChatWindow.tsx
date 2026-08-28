@@ -167,6 +167,7 @@ export default function ChatWindow({
   const [systemPrompt, setSystemPrompt] = useState(savedSettings.systemPrompt ?? DEFAULT_SYSTEM_PROMPT);
   const [model, setModel] = useState<ModelId>(savedSettings.model);
   const [googleClientId, setGoogleClientId] = useState(savedSettings.googleClientId);
+  const [googleClientSecret, setGoogleClientSecret] = useState(savedSettings.googleClientSecret);
   const [googleCalendarId, setGoogleCalendarId] = useState(savedSettings.googleCalendarId);
   const [calendarTags, setCalendarTags] = useState(savedSettings.calendarTags);
   const [calendarTagInput, setCalendarTagInput] = useState("");
@@ -267,6 +268,7 @@ export default function ChatWindow({
       systemPrompt,
       model,
       googleClientId,
+      googleClientSecret,
       googleCalendarId,
       calendarTags,
       autoDailyCalendarSync,
@@ -283,6 +285,7 @@ export default function ChatWindow({
     systemPrompt,
     model,
     googleClientId,
+    googleClientSecret,
     googleCalendarId,
     calendarTags,
     autoDailyCalendarSync,
@@ -368,9 +371,13 @@ export default function ChatWindow({
       if (!googleClientId.trim()) {
         throw new Error("Google Client ID を設定してください");
       }
+      if (!googleClientSecret.trim()) {
+        throw new Error("Google Client Secret を設定してください");
+      }
       const { start, end } = getDayRange();
       const responseBody = await invoke<string>("google_calendar_events", {
         clientId: googleClientId.trim(),
+        clientSecret: googleClientSecret.trim(),
         calendarId: googleCalendarId.trim() || "primary",
         timeMin: start.toISOString(),
         timeMax: end.toISOString(),
@@ -407,7 +414,7 @@ export default function ChatWindow({
     } finally {
       setScheduleLoading(false);
     }
-  }, [calendarTags, ensureNotificationPermission, googleCalendarId, googleClientId]);
+  }, [calendarTags, ensureNotificationPermission, googleCalendarId, googleClientId, googleClientSecret]);
 
   useEffect(() => {
     if (!showTodaySchedule) return;
@@ -1017,6 +1024,22 @@ export default function ChatWindow({
                 />
                 <div className="schedule-tag-help">
                   更新を押すとSafariまたはChromeでGoogle認証が開きます。
+                </div>
+              </div>
+              <div className="settings-row settings-row--column">
+                <div className="settings-label-row">
+                  <span className="settings-label">Google Client Secret</span>
+                </div>
+                <input
+                  type="password"
+                  className="settings-text-input"
+                  value={googleClientSecret}
+                  onChange={(e) => setGoogleClientSecret(e.target.value)}
+                  placeholder="Google OAuth Client Secret"
+                  autoComplete="off"
+                />
+                <div className="schedule-tag-help">
+                  デスクトップ用クライアントの作成画面に表示された値を入力します。
                 </div>
               </div>
               <div className="settings-row settings-row--column">
