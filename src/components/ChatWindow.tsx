@@ -207,7 +207,6 @@ export default function ChatWindow({
   const [taskReminderTimes, setTaskReminderTimes] = useState(savedSettings.taskReminderTimes);
   const [companionMode, setCompanionMode] = useState<CompanionMode>(savedSettings.companionMode);
   const [memory, setMemory] = useState(savedSettings.memory);
-  const [confirmBeforeActions, setConfirmBeforeActions] = useState(savedSettings.confirmBeforeActions);
   const [proactiveLevel, setProactiveLevel] = useState<ProactiveLevel>(savedSettings.proactiveLevel);
 
   const [sessions, setSessions] = useState<Session[]>(() => {
@@ -316,7 +315,6 @@ export default function ChatWindow({
       taskReminderTimes,
       companionMode,
       memory,
-      confirmBeforeActions,
       proactiveLevel,
     });
   }, [
@@ -335,7 +333,6 @@ export default function ChatWindow({
     taskReminderTimes,
     companionMode,
     memory,
-    confirmBeforeActions,
     proactiveLevel,
   ]);
 
@@ -576,13 +573,6 @@ export default function ChatWindow({
     const text = input.trim();
     if (!text || isLoading) return;
 
-    if (autoPermissions && confirmBeforeActions) {
-      const approved = window.confirm(
-        "Auto実行が有効です。Codexがファイル変更やコマンド実行を行う可能性があります。送信しますか？"
-      );
-      if (!approved) return;
-    }
-
     setInput("");
     setIsLoading(true);
 
@@ -620,7 +610,7 @@ export default function ChatWindow({
         return [...filtered, { id: ++msgId, role: "error", content: `起動エラー: ${String(e)}` }];
       });
     }
-  }, [input, isLoading, messages, workingDir, autoPermissions, confirmBeforeActions, systemPrompt, model, companionMode, memory, attachedImages]);
+  }, [input, isLoading, messages, workingDir, autoPermissions, systemPrompt, model, companionMode, memory, attachedImages]);
 
   const handleStop = useCallback(async () => {
     await invoke("stop_codex").catch(() => {});
@@ -1036,19 +1026,6 @@ export default function ChatWindow({
                 <div className="settings-warn">
                   ⚠ Codex がコマンド実行やファイル変更を進める場合があります
                 </div>
-              )}
-              {autoPermissions && (
-                <label className="settings-toggle">
-                  <input
-                    type="checkbox"
-                    checked={confirmBeforeActions}
-                    onChange={(e) => setConfirmBeforeActions(e.target.checked)}
-                  />
-                  <span>
-                    送信前に実行確認
-                    <small>（Auto実行時の誤操作を防止）</small>
-                  </span>
-                </label>
               )}
             </div>
             <div className="settings-row">

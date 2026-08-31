@@ -85,7 +85,6 @@ export interface CompanionSettings {
   taskReminderTimes: string[];
   companionMode: CompanionMode;
   memory: string;
-  confirmBeforeActions: boolean;
   proactiveLevel: ProactiveLevel;
 }
 
@@ -132,7 +131,6 @@ const DEFAULT_SETTINGS: CompanionSettings = {
   taskReminderTimes: [],
   companionMode: "general",
   memory: "",
-  confirmBeforeActions: true,
   proactiveLevel: "standard",
 };
 
@@ -164,7 +162,6 @@ export function loadSettings(): CompanionSettings {
       taskReminderTimes: normalizeTaskReminderTimes(parsed.taskReminderTimes),
       companionMode: normalizeCompanionMode(parsed.companionMode),
       memory: parsed.memory ?? DEFAULT_SETTINGS.memory,
-      confirmBeforeActions: parsed.confirmBeforeActions ?? DEFAULT_SETTINGS.confirmBeforeActions,
       proactiveLevel: parsed.proactiveLevel === "quiet" || parsed.proactiveLevel === "proactive"
         ? parsed.proactiveLevel
         : "standard",
