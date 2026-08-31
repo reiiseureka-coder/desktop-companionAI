@@ -231,6 +231,7 @@ export default function ChatWindow({
   const [isLoading, setIsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showTodaySchedule, setShowTodaySchedule] = useState(false);
+  const [showTaskMemo, setShowTaskMemo] = useState(false);
   const [scheduleItems, setScheduleItems] = useState<CalendarItem[]>(
     cachedSchedule?.dateKey === todayKey ? cachedSchedule.items : []
   );
@@ -241,6 +242,7 @@ export default function ChatWindow({
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [taskMemos, setTaskMemos] = useState<TaskMemoItem[]>(() => loadTaskMemo(initialTodayKey));
   const [taskMemoInput, setTaskMemoInput] = useState("");
+  const [taskReminderDraft, setTaskReminderDraft] = useState("10:00");
   const [attachedImages, setAttachedImages] = useState<string[]>([]);
   const [contextStatus, setContextStatus] = useState<string | null>(null);
 
@@ -267,8 +269,8 @@ export default function ChatWindow({
   }, []);
 
   useEffect(() => {
-    if (chatOpen && !showTodaySchedule) inputRef.current?.focus();
-  }, [chatOpen, showTodaySchedule]);
+    if (chatOpen && !showTodaySchedule && !showTaskMemo) inputRef.current?.focus();
+  }, [chatOpen, showTaskMemo, showTodaySchedule]);
 
   useEffect(() => {
     const el = inputRef.current;
@@ -735,12 +737,16 @@ export default function ChatWindow({
     saveCurrentSession(session.messages);
     setShowSettings(false);
     setShowTodaySchedule(false);
+    setShowTaskMemo(false);
   }, []);
 
   const toggleSettings = useCallback(() => {
     setShowSettings((current) => {
       const next = !current;
-      if (next) setShowTodaySchedule(false);
+      if (next) {
+        setShowTodaySchedule(false);
+        setShowTaskMemo(false);
+      }
       return next;
     });
   }, []);
@@ -748,7 +754,21 @@ export default function ChatWindow({
   const toggleTodaySchedule = useCallback(() => {
     setShowTodaySchedule((current) => {
       const next = !current;
-      if (next) setShowSettings(false);
+      if (next) {
+        setShowSettings(false);
+        setShowTaskMemo(false);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleTaskMemoPanel = useCallback(() => {
+    setShowTaskMemo((current) => {
+      const next = !current;
+      if (next) {
+        setShowSettings(false);
+        setShowTodaySchedule(false);
+      }
       return next;
     });
   }, []);
@@ -809,12 +829,15 @@ export default function ChatWindow({
     });
   }, [todayKey]);
 
-  const toggleTaskReminderTime = useCallback((time: string) => {
-    setTaskReminderTimes((current) => current.includes(time)
-      ? current.filter((entry) => entry !== time)
-      : [...current, time].sort());
-    if (!taskReminderTimes.includes(time)) void ensureNotificationPermission();
-  }, [ensureNotificationPermission, taskReminderTimes]);
+  const addTaskReminderTime = useCallback(() => {
+    if (taskReminderTimes.includes(taskReminderDraft)) return;
+    setTaskReminderTimes((current) => [...current, taskReminderDraft].sort());
+    void ensureNotificationPermission();
+  }, [ensureNotificationPermission, taskReminderDraft, taskReminderTimes]);
+
+  const removeTaskReminderTime = useCallback((time: string) => {
+    setTaskReminderTimes((current) => current.filter((entry) => entry !== time));
+  }, []);
 
   const dirName = workingDir
     ? (workingDir === homeDirRef.current ? "~" : workingDir.split("/").pop() || workingDir)
@@ -847,9 +870,16 @@ export default function ChatWindow({
           </div>
           <div className="bubble-header-actions">
             <button
+              className={`btn-bubble-icon ${showTaskMemo ? "active" : ""}`}
+              onClick={toggleTaskMemoPanel}
+              title="タスクメモ"
+            >
+              📝
+            </button>
+            <button
               className={`btn-bubble-icon ${showTodaySchedule ? "active" : ""}`}
               onClick={toggleTodaySchedule}
-              title="今日の管理"
+              title="Google Calendar"
             >
               🗓︎
             </button>
@@ -1085,11 +1115,11 @@ export default function ChatWindow({
               </div>
             )}
           </div>
-        ) : showTodaySchedule ? (
+        ) : showTaskMemo ? (
           <div className="schedule-panel">
             <div className="schedule-panel-header">
               <div>
-                <div className="schedule-panel-title">今日の管理</div>
+                <div className="schedule-panel-title">タスクメモ</div>
                 <div className="schedule-panel-meta">
                   未完了 {taskMemos.filter((item) => !item.completed).length}件
                 </div>
@@ -1147,25 +1177,53 @@ export default function ChatWindow({
             <section className="task-reminder-card">
               <div className="task-section-title">定時リマインド</div>
               <div className="task-section-help">
-                ONにした時刻に、未完了タスクを毎日通知します（アプリ起動中のみ）
+                追加した時刻に、未完了タスクを毎日通知します（アプリ起動中のみ）
               </div>
-              <div className="task-reminder-grid">
-                {TASK_REMINDER_TIMES.map((time) => {
-                  const enabled = taskReminderTimes.includes(time);
-                  return (
-                    <button
-                      key={time}
-                      className={`task-reminder-toggle ${enabled ? "active" : ""}`}
-                      onClick={() => toggleTaskReminderTime(time)}
-                      aria-pressed={enabled}
-                    >
+              <div className="task-reminder-editor">
+                <select
+                  className="settings-select"
+                  value={taskReminderDraft}
+                  onChange={(e) => setTaskReminderDraft(e.target.value)}
+                >
+                  {TASK_REMINDER_TIMES.map((time) => (
+                    <option key={time} value={time}>{time}</option>
+                  ))}
+                </select>
+                <button
+                  className="btn-pick"
+                  onClick={addTaskReminderTime}
+                  disabled={taskReminderTimes.includes(taskReminderDraft)}
+                >
+                  追加
+                </button>
+              </div>
+              {taskReminderTimes.length === 0 ? (
+                <div className="task-memo-empty">通知時刻は設定されていません</div>
+              ) : (
+                <div className="task-reminder-active-list">
+                  {taskReminderTimes.map((time) => (
+                    <div key={time} className="task-reminder-active-item">
                       <span>{time}</span>
-                      <span className="task-reminder-state">{enabled ? "ON" : "OFF"}</span>
-                    </button>
-                  );
-                })}
-              </div>
+                      <button
+                        onClick={() => removeTaskReminderTime(time)}
+                        title={`${time}の通知を解除`}
+                      >
+                        解除 ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
+          </div>
+        ) : showTodaySchedule ? (
+          <div className="schedule-panel">
+            <div className="schedule-panel-header">
+              <div>
+                <div className="schedule-panel-title">Google Calendar</div>
+                <div className="schedule-panel-meta">連携設定</div>
+              </div>
+            </div>
 
             <button
               className={`calendar-integration-toggle ${showGoogleCalendarIntegration ? "active" : ""}`}

@@ -545,41 +545,50 @@ html, body {
   color: #d44c62;
 }
 
-.task-reminder-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 5px;
-}
-
-.task-reminder-toggle {
+.task-reminder-editor {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-  padding: 6px 7px;
-  border: 1px solid rgba(124, 111, 247, 0.16);
-  border-radius: 8px;
-  background: white;
-  color: #716492;
-  font: inherit;
+  gap: 6px;
+}
+
+.task-reminder-editor .settings-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-reminder-active-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.task-reminder-active-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px 5px 9px;
+  border: 1px solid rgba(124, 111, 247, 0.2);
+  border-radius: 999px;
+  background: #ebe7ff;
+  color: #55459a;
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
+}
+
+.task-reminder-active-item button {
+  padding: 1px 4px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(124, 111, 247, 0.12);
+  color: #7a6bad;
+  font: inherit;
+  font-size: 8px;
   cursor: pointer;
 }
 
-.task-reminder-toggle.active {
-  border-color: #7c6ff7;
-  background: #e9e5ff;
-  color: #514198;
-}
-
-.task-reminder-state {
-  color: #b2a8c8;
-  font-size: 8px;
-}
-
-.task-reminder-toggle.active .task-reminder-state {
-  color: #6b5be1;
+.task-reminder-active-item button:hover {
+  background: rgba(220, 70, 90, 0.1);
+  color: #d44c62;
 }
 
 .calendar-integration-toggle {
