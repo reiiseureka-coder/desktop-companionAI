@@ -1174,6 +1174,16 @@ export default function ChatWindow({
               )}
             </section>
 
+          </div>
+        ) : showTodaySchedule ? (
+          <div className="schedule-panel">
+            <div className="schedule-panel-header">
+              <div>
+                <div className="schedule-panel-title">Google Calendar</div>
+                <div className="schedule-panel-meta">連携設定</div>
+              </div>
+            </div>
+
             <section className="task-reminder-card">
               <div className="task-section-title">定時リマインド</div>
               <div className="task-section-help">
@@ -1215,15 +1225,6 @@ export default function ChatWindow({
                 </div>
               )}
             </section>
-          </div>
-        ) : showTodaySchedule ? (
-          <div className="schedule-panel">
-            <div className="schedule-panel-header">
-              <div>
-                <div className="schedule-panel-title">Google Calendar</div>
-                <div className="schedule-panel-meta">連携設定</div>
-              </div>
-            </div>
 
             <button
               className={`calendar-integration-toggle ${showGoogleCalendarIntegration ? "active" : ""}`}
