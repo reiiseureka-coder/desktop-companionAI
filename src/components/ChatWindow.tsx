@@ -773,6 +773,13 @@ export default function ChatWindow({
     });
   }, []);
 
+  const returnToChat = useCallback(() => {
+    setShowSettings(false);
+    setShowTodaySchedule(false);
+    setShowTaskMemo(false);
+    window.requestAnimationFrame(() => inputRef.current?.focus());
+  }, []);
+
   const invalidateSchedule = useCallback(() => {
     setScheduleItems([]);
     setScheduleLastSyncedAt(null);
@@ -895,6 +902,9 @@ export default function ChatWindow({
             </button>
             <button className="btn-bubble-close" onClick={onClose} title="閉じる (ESC)">
               ✕
+            </button>
+            <button className="btn-bubble-icon" onClick={returnToChat} title="チャットに戻る">
+              ↩
             </button>
             <button className="btn-bubble-quit" onClick={() => exit(0)} title="アプリを終了">
               ⏻
