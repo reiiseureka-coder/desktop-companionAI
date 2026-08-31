@@ -238,6 +238,10 @@ html, body {
 .btn-pick:hover {
   background: #6a5de0;
 }
+.btn-pick:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
 .btn-pick--clear {
   background: rgba(255, 80, 80, 0.12);
   color: #e05060;
@@ -428,6 +432,182 @@ html, body {
   margin-top: 3px;
   color: #9b87e8;
   font-size: 11px;
+}
+
+.task-memo-card,
+.task-reminder-card,
+.calendar-integration-section {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px;
+  background: #f7f5ff;
+  border: 1px solid rgba(124, 111, 247, 0.14);
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+.task-section-title {
+  color: #4a3a7a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.task-section-help,
+.task-memo-empty {
+  color: #9485b8;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.task-memo-editor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-memo-editor .settings-text-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-memo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.task-memo-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 5px 7px;
+  background: white;
+  border: 1px solid rgba(124, 111, 247, 0.13);
+  border-radius: 9px;
+}
+
+.task-memo-check {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid rgba(124, 111, 247, 0.42);
+  border-radius: 6px;
+  background: white;
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.task-memo-item.completed .task-memo-check {
+  background: #7c6ff7;
+  border-color: #7c6ff7;
+}
+
+.task-memo-text {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #4a3a7a;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: left;
+  word-break: break-word;
+  cursor: pointer;
+}
+
+.task-memo-item.completed .task-memo-text {
+  color: #a99fc2;
+  text-decoration: line-through;
+}
+
+.task-memo-delete {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #b7accd;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.task-memo-delete:hover {
+  background: rgba(220, 70, 90, 0.1);
+  color: #d44c62;
+}
+
+.task-reminder-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.task-reminder-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 6px 7px;
+  border: 1px solid rgba(124, 111, 247, 0.16);
+  border-radius: 8px;
+  background: white;
+  color: #716492;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.task-reminder-toggle.active {
+  border-color: #7c6ff7;
+  background: #e9e5ff;
+  color: #514198;
+}
+
+.task-reminder-state {
+  color: #b2a8c8;
+  font-size: 8px;
+}
+
+.task-reminder-toggle.active .task-reminder-state {
+  color: #6b5be1;
+}
+
+.calendar-integration-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid rgba(124, 111, 247, 0.14);
+  border-radius: 10px;
+  background: #f4f1ff;
+  color: #7464a7;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.calendar-integration-toggle.active {
+  background: #ebe7ff;
+  color: #55459a;
+}
+
+.calendar-integration-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .schedule-panel-note {

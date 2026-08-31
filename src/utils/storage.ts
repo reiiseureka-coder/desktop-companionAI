@@ -7,6 +7,7 @@ const CHAT_SIZE_KEY = "companion_chat_size";
 const CURRENT_SESSION_KEY = "companion_current_session";
 const SESSIONS_KEY = "companion_sessions";
 const CALENDAR_CACHE_KEY = "companion_calendar_cache";
+const TASK_MEMO_KEY = "companion_task_memo";
 
 export const DEFAULT_SYSTEM_PROMPT =
   `あなたはデスクトップ上に常駐するコンパニオンAIです。
@@ -35,6 +36,12 @@ export const COMPANION_MODES = [
 export type CompanionMode = typeof COMPANION_MODES[number]["id"];
 export type ProactiveLevel = "quiet" | "standard" | "proactive";
 export const DEFAULT_CALENDAR_TAGS = ["MTG", "移動"];
+export const TASK_REMINDER_TIMES = Array.from({ length: 27 }, (_, index) => {
+  const totalMinutes = (8 * 60) + (index * 30);
+  const hour = String(Math.floor(totalMinutes / 60)).padStart(2, "0");
+  const minute = String(totalMinutes % 60).padStart(2, "0");
+  return `${hour}:${minute}`;
+});
 
 function normalizeCompanionMode(mode: unknown): CompanionMode {
   if (typeof mode !== "string") return "general";
@@ -54,6 +61,14 @@ function normalizeCalendarTags(tags: unknown): string[] {
     .filter(Boolean))];
 }
 
+function normalizeTaskReminderTimes(times: unknown): string[] {
+  if (!Array.isArray(times)) return [];
+  const allowed = new Set(TASK_REMINDER_TIMES);
+  return [...new Set(times.filter((time): time is string => (
+    typeof time === "string" && allowed.has(time)
+  )))].sort();
+}
+
 export interface CompanionSettings {
   workingDir: string;
   autoPermissions: boolean;
@@ -66,6 +81,8 @@ export interface CompanionSettings {
   calendarTags: string[];
   autoDailyCalendarSync: boolean;
   dailyCalendarSyncTime: string;
+  showGoogleCalendarIntegration: boolean;
+  taskReminderTimes: string[];
   companionMode: CompanionMode;
   memory: string;
   confirmBeforeActions: boolean;
@@ -87,6 +104,18 @@ export interface CalendarCache {
   items: CalendarItem[];
 }
 
+export interface TaskMemoItem {
+  id: string;
+  text: string;
+  completed: boolean;
+  createdAt: number;
+}
+
+interface TaskMemoStore {
+  dateKey: string;
+  items: TaskMemoItem[];
+}
+
 const DEFAULT_SETTINGS: CompanionSettings = {
   workingDir: "",
   autoPermissions: false,
@@ -99,6 +128,8 @@ const DEFAULT_SETTINGS: CompanionSettings = {
   calendarTags: [...DEFAULT_CALENDAR_TAGS],
   autoDailyCalendarSync: false,
   dailyCalendarSyncTime: "09:00",
+  showGoogleCalendarIntegration: false,
+  taskReminderTimes: [],
   companionMode: "general",
   memory: "",
   confirmBeforeActions: true,
@@ -128,6 +159,9 @@ export function loadSettings(): CompanionSettings {
       calendarTags: normalizeCalendarTags(parsed.calendarTags),
       autoDailyCalendarSync: parsed.autoDailyCalendarSync ?? DEFAULT_SETTINGS.autoDailyCalendarSync,
       dailyCalendarSyncTime: parsed.dailyCalendarSyncTime ?? DEFAULT_SETTINGS.dailyCalendarSyncTime,
+      showGoogleCalendarIntegration: parsed.showGoogleCalendarIntegration
+        ?? DEFAULT_SETTINGS.showGoogleCalendarIntegration,
+      taskReminderTimes: normalizeTaskReminderTimes(parsed.taskReminderTimes),
       companionMode: normalizeCompanionMode(parsed.companionMode),
       memory: parsed.memory ?? DEFAULT_SETTINGS.memory,
       confirmBeforeActions: parsed.confirmBeforeActions ?? DEFAULT_SETTINGS.confirmBeforeActions,
@@ -314,5 +348,28 @@ export function loadCalendarCache(): CalendarCache | null {
     return JSON.parse(raw) as CalendarCache;
   } catch (_) {
     return null;
+  }
+}
+
+export function saveTaskMemo(dateKey: string, items: TaskMemoItem[]): void {
+  try {
+    localStorage.setItem(TASK_MEMO_KEY, JSON.stringify({ dateKey, items } satisfies TaskMemoStore));
+  } catch (_) {}
+}
+
+export function loadTaskMemo(dateKey: string): TaskMemoItem[] {
+  try {
+    const raw = localStorage.getItem(TASK_MEMO_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Partial<TaskMemoStore>;
+    if (parsed.dateKey !== dateKey || !Array.isArray(parsed.items)) return [];
+    return parsed.items.filter((item): item is TaskMemoItem => (
+      typeof item?.id === "string"
+      && typeof item?.text === "string"
+      && typeof item?.completed === "boolean"
+      && typeof item?.createdAt === "number"
+    ));
+  } catch (_) {
+    return [];
   }
 }

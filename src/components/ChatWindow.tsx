@@ -13,7 +13,8 @@ import {
   saveCurrentSession, popCurrentSession, peekCurrentSession,
   loadSessions, saveSessions,
   loadCalendarCache, saveCalendarCache,
-  Session, DEFAULT_SYSTEM_PROMPT, MODELS, ModelId, CalendarItem,
+  loadTaskMemo, saveTaskMemo, TASK_REMINDER_TIMES,
+  Session, DEFAULT_SYSTEM_PROMPT, MODELS, ModelId, CalendarItem, TaskMemoItem,
   COMPANION_MODES, CompanionMode, ProactiveLevel,
 } from "../utils/storage";
 
@@ -169,6 +170,15 @@ function getNextDailySyncDelay(syncTime: string): number {
   return next.getTime() - Date.now();
 }
 
+function getNextTaskReminderDelay(reminderTime: string): number {
+  const [rawHour, rawMinute] = reminderTime.split(":");
+  const next = new Date();
+  next.setSeconds(0, 0);
+  next.setHours(Number(rawHour), Number(rawMinute), 0, 0);
+  if (next.getTime() <= Date.now()) next.setDate(next.getDate() + 1);
+  return next.getTime() - Date.now();
+}
+
 export default function ChatWindow({
   chatOpen, characterPosition, onClose, onImageChange,
   currentImage, charSize, onSizeChange, compactCharSize,
@@ -176,7 +186,8 @@ export default function ChatWindow({
 }: Props) {
   const savedSettings = loadSettings();
   const cachedSchedule = loadCalendarCache();
-  const todayKey = getTodayDateKey();
+  const initialTodayKey = getTodayDateKey();
+  const [todayKey, setTodayKey] = useState(initialTodayKey);
 
   const [workingDir, setWorkingDir] = useState(savedSettings.workingDir);
   const [autoPermissions, setAutoPermissions] = useState(savedSettings.autoPermissions);
@@ -190,6 +201,10 @@ export default function ChatWindow({
   const [calendarTagInput, setCalendarTagInput] = useState("");
   const [autoDailyCalendarSync, setAutoDailyCalendarSync] = useState(savedSettings.autoDailyCalendarSync);
   const [dailyCalendarSyncTime, setDailyCalendarSyncTime] = useState(savedSettings.dailyCalendarSyncTime);
+  const [showGoogleCalendarIntegration, setShowGoogleCalendarIntegration] = useState(
+    savedSettings.showGoogleCalendarIntegration
+  );
+  const [taskReminderTimes, setTaskReminderTimes] = useState(savedSettings.taskReminderTimes);
   const [companionMode, setCompanionMode] = useState<CompanionMode>(savedSettings.companionMode);
   const [memory, setMemory] = useState(savedSettings.memory);
   const [confirmBeforeActions, setConfirmBeforeActions] = useState(savedSettings.confirmBeforeActions);
@@ -224,6 +239,8 @@ export default function ChatWindow({
   );
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [taskMemos, setTaskMemos] = useState<TaskMemoItem[]>(() => loadTaskMemo(initialTodayKey));
+  const [taskMemoInput, setTaskMemoInput] = useState("");
   const [attachedImages, setAttachedImages] = useState<string[]>([]);
   const [contextStatus, setContextStatus] = useState<string | null>(null);
 
@@ -240,6 +257,7 @@ export default function ChatWindow({
   const notifiedEventKeysRef = useRef<Set<string>>(new Set());
   const scheduleRequestInFlightRef = useRef(false);
   const calendarAutoRefreshAttemptedRef = useRef(false);
+  const taskReminderTimeoutsRef = useRef<number[]>([]);
 
   useEffect(() => {
     homeDir().then((home) => {
@@ -292,6 +310,8 @@ export default function ChatWindow({
       calendarTags,
       autoDailyCalendarSync,
       dailyCalendarSyncTime,
+      showGoogleCalendarIntegration,
+      taskReminderTimes,
       companionMode,
       memory,
       confirmBeforeActions,
@@ -309,6 +329,8 @@ export default function ChatWindow({
     calendarTags,
     autoDailyCalendarSync,
     dailyCalendarSyncTime,
+    showGoogleCalendarIntegration,
+    taskReminderTimes,
     companionMode,
     memory,
     confirmBeforeActions,
@@ -320,8 +342,16 @@ export default function ChatWindow({
   }, [chatWidth, chatHeight]);
 
   useEffect(() => {
-    const currentDayKey = getTodayDateKey();
-    if (cachedSchedule?.dateKey !== currentDayKey && currentDayKey !== todayKey) {
+    const intervalId = window.setInterval(() => {
+      const currentDayKey = getTodayDateKey();
+      setTodayKey((current) => current === currentDayKey ? current : currentDayKey);
+    }, 60_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
+    setTaskMemos(loadTaskMemo(todayKey));
+    if (cachedSchedule?.dateKey !== todayKey) {
       setScheduleItems([]);
       setScheduleLastSyncedAt(null);
     }
@@ -442,7 +472,7 @@ export default function ChatWindow({
   }, [calendarTags, googleCalendarId, googleClientId, googleClientSecret]);
 
   useEffect(() => {
-    if (!showTodaySchedule) {
+    if (!showTodaySchedule || !showGoogleCalendarIntegration) {
       calendarAutoRefreshAttemptedRef.current = false;
       return;
     }
@@ -453,21 +483,21 @@ export default function ChatWindow({
     ) return;
     calendarAutoRefreshAttemptedRef.current = true;
     void refreshSchedule(false);
-  }, [showTodaySchedule, scheduleLastSyncedAt, scheduleLoading, refreshSchedule]);
+  }, [showTodaySchedule, showGoogleCalendarIntegration, scheduleLastSyncedAt, scheduleLoading, refreshSchedule]);
 
   useEffect(() => {
-    if (!autoDailyCalendarSync) return;
+    if (!showGoogleCalendarIntegration || !autoDailyCalendarSync) return;
     const timeoutId = window.setTimeout(() => {
       void refreshSchedule(false);
     }, getNextDailySyncDelay(dailyCalendarSyncTime));
     return () => window.clearTimeout(timeoutId);
-  }, [autoDailyCalendarSync, dailyCalendarSyncTime, refreshSchedule, scheduleLastSyncedAt]);
+  }, [showGoogleCalendarIntegration, autoDailyCalendarSync, dailyCalendarSyncTime, refreshSchedule, scheduleLastSyncedAt]);
 
   useEffect(() => {
     scheduleTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
     scheduleTimeoutsRef.current = [];
 
-    if (proactiveLevel === "quiet") return;
+    if (!showGoogleCalendarIntegration || proactiveLevel === "quiet") return;
 
     const today = getTodayDateKey();
     if (today !== todayKey) {
@@ -506,7 +536,39 @@ export default function ChatWindow({
       scheduleTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
       scheduleTimeoutsRef.current = [];
     };
-  }, [ensureNotificationPermission, proactiveLevel, scheduleItems, todayKey]);
+  }, [ensureNotificationPermission, proactiveLevel, scheduleItems, showGoogleCalendarIntegration, todayKey]);
+
+  useEffect(() => {
+    taskReminderTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    taskReminderTimeoutsRef.current = [];
+    let cancelled = false;
+
+    const scheduleNextReminder = (reminderTime: string) => {
+      if (cancelled) return;
+      const timeoutId = window.setTimeout(async () => {
+        const granted = await ensureNotificationPermission();
+        if (granted) {
+          const pending = taskMemos.filter((item) => !item.completed);
+          const preview = pending.slice(0, 2).map((item) => item.text).join(" / ");
+          await sendNotification({
+            title: "Shaolon AIのタスクメモ",
+            body: pending.length > 0
+              ? `未完了${pending.length}件：${preview}`
+              : "今日のタスクを確認しよう",
+          });
+        }
+        scheduleNextReminder(reminderTime);
+      }, getNextTaskReminderDelay(reminderTime));
+      taskReminderTimeoutsRef.current.push(timeoutId);
+    };
+
+    taskReminderTimes.forEach(scheduleNextReminder);
+    return () => {
+      cancelled = true;
+      taskReminderTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+      taskReminderTimeoutsRef.current = [];
+    };
+  }, [ensureNotificationPermission, taskMemos, taskReminderTimes]);
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();
@@ -715,6 +777,45 @@ export default function ChatWindow({
     invalidateSchedule();
   }, [invalidateSchedule]);
 
+  const addTaskMemo = useCallback(() => {
+    const text = taskMemoInput.trim();
+    if (!text) return;
+    setTaskMemos((current) => {
+      const next = [
+        ...current,
+        { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, text, completed: false, createdAt: Date.now() },
+      ];
+      saveTaskMemo(todayKey, next);
+      return next;
+    });
+    setTaskMemoInput("");
+  }, [taskMemoInput, todayKey]);
+
+  const toggleTaskMemo = useCallback((id: string) => {
+    setTaskMemos((current) => {
+      const next = current.map((item) => item.id === id
+        ? { ...item, completed: !item.completed }
+        : item);
+      saveTaskMemo(todayKey, next);
+      return next;
+    });
+  }, [todayKey]);
+
+  const removeTaskMemo = useCallback((id: string) => {
+    setTaskMemos((current) => {
+      const next = current.filter((item) => item.id !== id);
+      saveTaskMemo(todayKey, next);
+      return next;
+    });
+  }, [todayKey]);
+
+  const toggleTaskReminderTime = useCallback((time: string) => {
+    setTaskReminderTimes((current) => current.includes(time)
+      ? current.filter((entry) => entry !== time)
+      : [...current, time].sort());
+    if (!taskReminderTimes.includes(time)) void ensureNotificationPermission();
+  }, [ensureNotificationPermission, taskReminderTimes]);
+
   const dirName = workingDir
     ? (workingDir === homeDirRef.current ? "~" : workingDir.split("/").pop() || workingDir)
     : null;
@@ -748,7 +849,7 @@ export default function ChatWindow({
             <button
               className={`btn-bubble-icon ${showTodaySchedule ? "active" : ""}`}
               onClick={toggleTodaySchedule}
-              title="今日の予定"
+              title="今日の管理"
             >
               🗓︎
             </button>
@@ -988,154 +1089,239 @@ export default function ChatWindow({
           <div className="schedule-panel">
             <div className="schedule-panel-header">
               <div>
-                <div className="schedule-panel-title">今日の予定</div>
+                <div className="schedule-panel-title">今日の管理</div>
                 <div className="schedule-panel-meta">
-                  最終更新 {formatScheduleTimestamp(scheduleLastSyncedAt)}
+                  未完了 {taskMemos.filter((item) => !item.completed).length}件
                 </div>
               </div>
-              <button
-                className="btn-pick btn-pick--small"
-                onClick={() => void refreshSchedule(true)}
-                disabled={scheduleLoading}
-                title="手動で更新"
-              >
-                {scheduleLoading ? "更新中…" : "更新"}
-              </button>
             </div>
 
-            <div className="schedule-panel-note">
-              {calendarTags.length > 0
-                ? `${calendarTags.map((tag) => `【${tag}】`).join("・")} から始まる予定だけ表示・通知します`
-                : "通知対象ラベルが未設定です"}
-            </div>
-
-            {googleClientId.trim() && scheduleError && (
-              <div className="schedule-error">{scheduleError}</div>
-            )}
-
-            <div className="schedule-config">
-              <div className="settings-row settings-row--column">
-                <div className="settings-label-row">
-                  <span className="settings-label">通知対象ラベル</span>
-                </div>
-                <div className="schedule-tag-editor">
-                  <input
-                    className="settings-text-input"
-                    value={calendarTagInput}
-                    onChange={(e) => setCalendarTagInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        addCalendarTag();
-                      }
-                    }}
-                    placeholder="例: アライアンス"
-                  />
-                  <button
-                    className="btn-pick"
-                    onClick={addCalendarTag}
-                    disabled={!normalizeScheduleTag(calendarTagInput)}
-                  >
-                    追加
-                  </button>
-                </div>
-                <div className="schedule-tag-help">
-                  【】は入れなくてもOK。予定名の先頭にあるラベルと一致します。
-                </div>
-                <div className="schedule-tag-list">
-                  {calendarTags.map((tag) => (
-                    <button
-                      key={tag}
-                      className="schedule-tag-chip"
-                      onClick={() => removeCalendarTag(tag)}
-                      title={`【${tag}】を削除`}
-                    >
-                      【{tag}】 <span aria-hidden="true">×</span>
-                    </button>
+            <section className="task-memo-card">
+              <div className="task-section-title">今日のタスクメモ</div>
+              <div className="task-memo-editor">
+                <input
+                  className="settings-text-input"
+                  value={taskMemoInput}
+                  onChange={(e) => setTaskMemoInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addTaskMemo();
+                    }
+                  }}
+                  placeholder="今日やることを入力"
+                />
+                <button className="btn-pick" onClick={addTaskMemo} disabled={!taskMemoInput.trim()}>
+                  追加
+                </button>
+              </div>
+              {taskMemos.length === 0 ? (
+                <div className="task-memo-empty">まだタスクはありません</div>
+              ) : (
+                <div className="task-memo-list">
+                  {taskMemos.map((item) => (
+                    <div key={item.id} className={`task-memo-item ${item.completed ? "completed" : ""}`}>
+                      <button
+                        className="task-memo-check"
+                        onClick={() => toggleTaskMemo(item.id)}
+                        title={item.completed ? "未完了に戻す" : "完了にする"}
+                      >
+                        {item.completed ? "✓" : ""}
+                      </button>
+                      <button className="task-memo-text" onClick={() => toggleTaskMemo(item.id)}>
+                        {item.text}
+                      </button>
+                      <button
+                        className="task-memo-delete"
+                        onClick={() => removeTaskMemo(item.id)}
+                        title="削除"
+                      >
+                        ×
+                      </button>
+                    </div>
                   ))}
                 </div>
-              </div>
-              <div className="settings-row settings-row--column">
-                <div className="settings-label-row">
-                  <span className="settings-label">Google Client ID</span>
-                </div>
-                <input
-                  className="settings-text-input"
-                  value={googleClientId}
-                  onChange={(e) => setGoogleClientId(e.target.value)}
-                  placeholder="Google OAuth Client ID"
-                />
-                <div className="schedule-tag-help">
-                  更新を押すとSafariまたはChromeでGoogle認証が開きます。
-                </div>
-              </div>
-              <div className="settings-row settings-row--column">
-                <div className="settings-label-row">
-                  <span className="settings-label">Google Client Secret</span>
-                </div>
-                <input
-                  type="password"
-                  className="settings-text-input"
-                  value={googleClientSecret}
-                  onChange={(e) => setGoogleClientSecret(e.target.value)}
-                  placeholder="Google OAuth Client Secret"
-                  autoComplete="off"
-                />
-                <div className="schedule-tag-help">
-                  デスクトップ用クライアントの作成画面に表示された値を入力します。
-                </div>
-              </div>
-              <div className="settings-row settings-row--column">
-                <div className="settings-label-row">
-                  <span className="settings-label">Google Calendar ID</span>
-                </div>
-                <input
-                  className="settings-text-input"
-                  value={googleCalendarId}
-                  onChange={(e) => setGoogleCalendarId(e.target.value)}
-                  placeholder="primary"
-                />
-              </div>
-              <div className="settings-row">
-                <label className="settings-toggle">
-                  <input
-                    type="checkbox"
-                    checked={autoDailyCalendarSync}
-                    onChange={(e) => setAutoDailyCalendarSync(e.target.checked)}
-                  />
-                  <span>
-                    毎日決まった時間に予定を更新
-                    <small>（アプリ起動中のみ。初期値は9:00）</small>
-                  </span>
-                </label>
-                <input
-                  type="time"
-                  className="settings-time-input"
-                  value={dailyCalendarSyncTime}
-                  onChange={(e) => setDailyCalendarSyncTime(e.target.value)}
-                  disabled={!autoDailyCalendarSync}
-                />
-              </div>
-            </div>
+              )}
+            </section>
 
-            {!googleClientId.trim() && (
-              <div className="schedule-empty">
-                Google Client ID を設定すると予定を読み込めます
+            <section className="task-reminder-card">
+              <div className="task-section-title">定時リマインド</div>
+              <div className="task-section-help">
+                ONにした時刻に、未完了タスクを毎日通知します（アプリ起動中のみ）
               </div>
+              <div className="task-reminder-grid">
+                {TASK_REMINDER_TIMES.map((time) => {
+                  const enabled = taskReminderTimes.includes(time);
+                  return (
+                    <button
+                      key={time}
+                      className={`task-reminder-toggle ${enabled ? "active" : ""}`}
+                      onClick={() => toggleTaskReminderTime(time)}
+                      aria-pressed={enabled}
+                    >
+                      <span>{time}</span>
+                      <span className="task-reminder-state">{enabled ? "ON" : "OFF"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <button
+              className={`calendar-integration-toggle ${showGoogleCalendarIntegration ? "active" : ""}`}
+              onClick={() => setShowGoogleCalendarIntegration((current) => !current)}
+            >
+              <span>Google Calendar連携</span>
+              <span>{showGoogleCalendarIntegration ? "隠す ▲" : "表示する ▼"}</span>
+            </button>
+
+            {showGoogleCalendarIntegration && (
+              <section className="calendar-integration-section">
+                <div className="calendar-integration-header">
+                  <div>
+                    <div className="task-section-title">Google Calendar</div>
+                    <div className="schedule-panel-meta">
+                      最終更新 {formatScheduleTimestamp(scheduleLastSyncedAt)}
+                    </div>
+                  </div>
+                  <button
+                    className="btn-pick btn-pick--small"
+                    onClick={() => void refreshSchedule(true)}
+                    disabled={scheduleLoading}
+                    title="手動で更新"
+                  >
+                    {scheduleLoading ? "更新中…" : "更新"}
+                  </button>
+                </div>
+
+                <div className="schedule-panel-note">
+                  {calendarTags.length > 0
+                    ? `${calendarTags.map((tag) => `【${tag}】`).join("・")} から始まる予定だけ表示・通知します`
+                    : "通知対象ラベルが未設定です"}
+                </div>
+
+                {googleClientId.trim() && scheduleError && (
+                  <div className="schedule-error">{scheduleError}</div>
+                )}
+
+                <div className="schedule-config">
+                  <div className="settings-row settings-row--column">
+                    <div className="settings-label-row">
+                      <span className="settings-label">通知対象ラベル</span>
+                    </div>
+                    <div className="schedule-tag-editor">
+                      <input
+                        className="settings-text-input"
+                        value={calendarTagInput}
+                        onChange={(e) => setCalendarTagInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            addCalendarTag();
+                          }
+                        }}
+                        placeholder="例: アライアンス"
+                      />
+                      <button
+                        className="btn-pick"
+                        onClick={addCalendarTag}
+                        disabled={!normalizeScheduleTag(calendarTagInput)}
+                      >
+                        追加
+                      </button>
+                    </div>
+                    <div className="schedule-tag-help">
+                      【】は入れなくてもOK。予定名の先頭にあるラベルと一致します。
+                    </div>
+                    <div className="schedule-tag-list">
+                      {calendarTags.map((tag) => (
+                        <button
+                          key={tag}
+                          className="schedule-tag-chip"
+                          onClick={() => removeCalendarTag(tag)}
+                          title={`【${tag}】を削除`}
+                        >
+                          【{tag}】 <span aria-hidden="true">×</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="settings-row settings-row--column">
+                    <div className="settings-label-row">
+                      <span className="settings-label">Google Client ID</span>
+                    </div>
+                    <input
+                      className="settings-text-input"
+                      value={googleClientId}
+                      onChange={(e) => setGoogleClientId(e.target.value)}
+                      placeholder="Google OAuth Client ID"
+                    />
+                    <div className="schedule-tag-help">
+                      更新を押すとSafariまたはChromeでGoogle認証が開きます。
+                    </div>
+                  </div>
+                  <div className="settings-row settings-row--column">
+                    <div className="settings-label-row">
+                      <span className="settings-label">Google Client Secret</span>
+                    </div>
+                    <input
+                      type="password"
+                      className="settings-text-input"
+                      value={googleClientSecret}
+                      onChange={(e) => setGoogleClientSecret(e.target.value)}
+                      placeholder="Google OAuth Client Secret"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="settings-row settings-row--column">
+                    <div className="settings-label-row">
+                      <span className="settings-label">Google Calendar ID</span>
+                    </div>
+                    <input
+                      className="settings-text-input"
+                      value={googleCalendarId}
+                      onChange={(e) => setGoogleCalendarId(e.target.value)}
+                      placeholder="primary"
+                    />
+                  </div>
+                  <div className="settings-row">
+                    <label className="settings-toggle">
+                      <input
+                        type="checkbox"
+                        checked={autoDailyCalendarSync}
+                        onChange={(e) => setAutoDailyCalendarSync(e.target.checked)}
+                      />
+                      <span>
+                        毎日決まった時間に予定を更新
+                        <small>（アプリ起動中のみ。初期値は9:00）</small>
+                      </span>
+                    </label>
+                    <input
+                      type="time"
+                      className="settings-time-input"
+                      value={dailyCalendarSyncTime}
+                      onChange={(e) => setDailyCalendarSyncTime(e.target.value)}
+                      disabled={!autoDailyCalendarSync}
+                    />
+                  </div>
+                </div>
+
+                {!googleClientId.trim() && (
+                  <div className="schedule-empty">Google Client ID を設定すると予定を読み込めます</div>
+                )}
+                {googleClientId.trim() && !scheduleError && scheduleItems.length === 0 && !scheduleLoading && (
+                  <div className="schedule-empty">今日は予定なし</div>
+                )}
+                <div className="schedule-list">
+                  {scheduleItems.map((item) => (
+                    <div key={`${item.id}-${item.startsAt}`} className="schedule-item">
+                      <span className="schedule-item-time">{item.startsLabel}</span>
+                      <span className="schedule-item-title">{item.title}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
             )}
-
-            {googleClientId.trim() && !scheduleError && scheduleItems.length === 0 && !scheduleLoading && (
-              <div className="schedule-empty">今日は予定なし</div>
-            )}
-
-            <div className="schedule-list">
-              {scheduleItems.map((item) => (
-                <div key={`${item.id}-${item.startsAt}`} className="schedule-item">
-                  <span className="schedule-item-time">{item.startsLabel}</span>
-                  <span className="schedule-item-title">{item.title}</span>
-                </div>
-              ))}
-            </div>
           </div>
         ) : (
           <>
