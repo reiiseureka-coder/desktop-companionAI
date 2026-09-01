@@ -2044,7 +2044,7 @@ export default function ChatWindow({
               <textarea
                 ref={inputRef}
                 className="chat-input"
-                placeholder={isLoading ? "考え中…" : "メッセージまたは / コマンド（ファイルもドロップできます）"}
+                placeholder={isLoading ? "考え中…" : "メッセージまたは / コマンド"}
                 value={input}
                 onChange={handleInput}
                 onKeyDown={handleKeyDown}
