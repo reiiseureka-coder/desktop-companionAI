@@ -286,6 +286,7 @@ export default function ChatWindow({
   const [templateContent, setTemplateContent] = useState("");
   const [diagnostics, setDiagnostics] = useState<DiagnosticsView | null>(null);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [showCommandList, setShowCommandList] = useState(false);
 
   const savedChatSize = loadChatSize();
   const [chatWidth, setChatWidth] = useState(savedChatSize.width);
@@ -969,21 +970,23 @@ export default function ChatWindow({
     }
   }, []);
 
-  const insertClipboardContext = useCallback(async () => {
+  const copyLatestMessage = useCallback(async () => {
+    const latestMessage = [...messages].reverse().find((message) => (
+      message.role === "assistant" && !message.streaming && message.content.trim()
+    )) ?? [...messages].reverse().find((message) => !message.streaming && message.content.trim());
+    if (!latestMessage) {
+      setContextStatus("コピーできる直前のやりとりがありません");
+      return;
+    }
     try {
-      const clipboard = (await invoke<string>("read_clipboard_text")).trim();
-      if (!clipboard) {
-        setContextStatus("クリップボードにテキストがありません");
-        return;
-      }
-      const clipped = clipboard.slice(0, 12000);
-      setInput((current) => `${current}${current ? "\n\n" : ""}[クリップボードからペーストした内容]\n${clipped}`);
-      setContextStatus("クリップボードの内容をペーストしました");
-      inputRef.current?.focus();
+      await invoke("write_clipboard_text", { text: latestMessage.content });
+      setContextStatus(latestMessage.role === "assistant"
+        ? "直前のAI回答をコピーしました"
+        : "直前のメッセージをコピーしました");
     } catch (error) {
       setContextStatus(String(error));
     }
-  }, []);
+  }, [messages]);
 
   const pickImage = useCallback(async () => {
     try {
@@ -1248,6 +1251,7 @@ export default function ChatWindow({
       || entry.label.includes(input.slice(1))
     )).slice(0, 6)
     : [];
+  const visibleCommands = showCommandList ? SLASH_COMMANDS : slashSuggestions;
 
   const dirName = workingDir
     ? (workingDir === homeDirRef.current ? "~" : workingDir.split("/").pop() || workingDir)
@@ -2019,8 +2023,16 @@ export default function ChatWindow({
               <button className="btn-context" onClick={attachCurrentScreen} disabled={isLoading} title="現在の画面を添付">
                 ◉ 画面
               </button>
-              <button className="btn-context" onClick={insertClipboardContext} disabled={isLoading} title="クリップボードの文章を入力欄へペースト">
-                ⧉ ペースト
+              <button className="btn-context" onClick={() => void copyLatestMessage()} disabled={isLoading} title="直前のAI回答をコピー">
+                ⧉ コピー
+              </button>
+              <button
+                className={`btn-context ${showCommandList ? "btn-context--active" : ""}`}
+                onClick={() => setShowCommandList((current) => !current)}
+                disabled={isLoading}
+                title="利用できるコマンドを表示"
+              >
+                ⌘ コマンド
               </button>
               {attachedPaths.length > 0 && (
                 <button className="btn-context btn-context--active" onClick={() => { setAttachedPaths([]); setContextStatus(null); }}>
@@ -2029,10 +2041,10 @@ export default function ChatWindow({
               )}
             </div>
             {contextStatus && <div className="context-status">{contextStatus}</div>}
-            {slashSuggestions.length > 0 && (
+            {visibleCommands.length > 0 && (
               <div className="slash-menu">
-                {slashSuggestions.map((entry) => (
-                  <button key={entry.command} onClick={() => { setInput(entry.command); inputRef.current?.focus(); }}>
+                {visibleCommands.map((entry) => (
+                  <button key={entry.command} onClick={() => { setInput(entry.command); setShowCommandList(false); inputRef.current?.focus(); }}>
                     <strong>{entry.command.trim()}</strong>
                     <span>{entry.label}</span>
                     <small>{entry.example}</small>

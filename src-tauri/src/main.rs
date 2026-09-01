@@ -5,7 +5,7 @@ mod codex;
 mod google_oauth;
 
 use std::io::Write;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -211,6 +211,32 @@ fn read_clipboard_text() -> Result<String, String> {
     Err("クリップボード取得は現在macOSのみ対応しています".into())
 }
 
+#[tauri::command]
+fn write_clipboard_text(text: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut child = Command::new("/usr/bin/pbcopy")
+            .stdin(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("クリップボードへコピーできません: {}", e))?;
+        {
+            let mut stdin = child.stdin.take().ok_or("クリップボードを開けませんでした")?;
+            stdin
+                .write_all(text.as_bytes())
+                .map_err(|e| format!("クリップボードへコピーできません: {}", e))?;
+        }
+        let status = child
+            .wait()
+            .map_err(|e| format!("コピーの完了を確認できません: {}", e))?;
+        if status.success() {
+            return Ok(());
+        }
+        return Err("クリップボードへコピーできませんでした".into());
+    }
+    #[cfg(not(target_os = "macos"))]
+    Err("クリップボードへのコピーは現在macOSのみ対応しています".into())
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(google_oauth::GoogleOAuthState::default())
@@ -251,6 +277,7 @@ fn main() {
             get_cursor_pos_native,
             capture_current_screen,
             read_clipboard_text,
+            write_clipboard_text,
             ensure_global_shortcuts,
             google_oauth::google_calendar_access_token,
             google_oauth::google_calendar_events,

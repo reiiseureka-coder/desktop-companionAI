@@ -1138,6 +1138,7 @@ html, body {
 .context-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 5px;
   padding: 7px 10px 3px;
   background: #fafaff;
