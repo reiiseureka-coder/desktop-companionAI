@@ -8,6 +8,8 @@ const CURRENT_SESSION_KEY = "companion_current_session";
 const SESSIONS_KEY = "companion_sessions";
 const CALENDAR_CACHE_KEY = "companion_calendar_cache";
 const TASK_MEMO_KEY = "companion_task_memo";
+const FAVORITE_MESSAGES_KEY = "companion_favorite_messages";
+const PROMPT_TEMPLATES_KEY = "companion_prompt_templates";
 
 export const DEFAULT_SYSTEM_PROMPT =
   `あなたはデスクトップ上に常駐するコンパニオンAIです。
@@ -35,6 +37,18 @@ export const COMPANION_MODES = [
 
 export type CompanionMode = typeof COMPANION_MODES[number]["id"];
 export type ProactiveLevel = "quiet" | "standard" | "proactive";
+export type DailySupportId = "morning" | "midday" | "evening";
+export interface DailySupportSetting {
+  id: DailySupportId;
+  label: string;
+  enabled: boolean;
+  time: string;
+}
+export const DEFAULT_DAILY_SUPPORTS: DailySupportSetting[] = [
+  { id: "morning", label: "朝の確認", enabled: false, time: "09:00" },
+  { id: "midday", label: "昼の確認", enabled: false, time: "13:00" },
+  { id: "evening", label: "夕方の振り返り", enabled: false, time: "18:00" },
+];
 export const DEFAULT_CALENDAR_TAGS = ["MTG", "移動"];
 export const TASK_REMINDER_TIMES = Array.from({ length: 27 }, (_, index) => {
   const totalMinutes = (8 * 60) + (index * 30);
@@ -69,6 +83,21 @@ function normalizeTaskReminderTimes(times: unknown): string[] {
   )))].sort();
 }
 
+function normalizeDailySupports(value: unknown): DailySupportSetting[] {
+  const entries = Array.isArray(value) ? value : [];
+  return DEFAULT_DAILY_SUPPORTS.map((fallback) => {
+    const saved = entries.find((entry) => entry?.id === fallback.id);
+    const time = typeof saved?.time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(saved.time)
+      ? saved.time
+      : fallback.time;
+    return {
+      ...fallback,
+      enabled: typeof saved?.enabled === "boolean" ? saved.enabled : fallback.enabled,
+      time,
+    };
+  });
+}
+
 export interface CompanionSettings {
   workingDir: string;
   autoPermissions: boolean;
@@ -86,6 +115,7 @@ export interface CompanionSettings {
   companionMode: CompanionMode;
   memory: string;
   proactiveLevel: ProactiveLevel;
+  dailySupports: DailySupportSetting[];
 }
 
 export interface CalendarItem {
@@ -108,11 +138,20 @@ export interface TaskMemoItem {
   text: string;
   completed: boolean;
   createdAt: number;
+  priority?: boolean;
+  reminderTime?: string | null;
+  snoozedUntil?: number | null;
+  carriedFrom?: string | null;
 }
 
-interface TaskMemoStore {
+interface LegacyTaskMemoStore {
   dateKey: string;
   items: TaskMemoItem[];
+}
+
+interface TaskMemoArchive {
+  version: 2;
+  days: Record<string, TaskMemoItem[]>;
 }
 
 const DEFAULT_SETTINGS: CompanionSettings = {
@@ -132,6 +171,7 @@ const DEFAULT_SETTINGS: CompanionSettings = {
   companionMode: "general",
   memory: "",
   proactiveLevel: "standard",
+  dailySupports: DEFAULT_DAILY_SUPPORTS.map((item) => ({ ...item })),
 };
 
 export function saveSettings(settings: CompanionSettings): void {
@@ -165,6 +205,7 @@ export function loadSettings(): CompanionSettings {
       proactiveLevel: parsed.proactiveLevel === "quiet" || parsed.proactiveLevel === "proactive"
         ? parsed.proactiveLevel
         : "standard",
+      dailySupports: normalizeDailySupports(parsed.dailySupports),
     };
   } catch (_) {
     return DEFAULT_SETTINGS;
@@ -186,6 +227,21 @@ export interface Session {
   id: number;
   timestamp: number;
   messages: StoredMessage[];
+  favorite?: boolean;
+  title?: string;
+}
+
+export interface FavoriteMessage {
+  id: string;
+  content: string;
+  createdAt: number;
+}
+
+export interface PromptTemplate {
+  id: string;
+  label: string;
+  content: string;
+  createdAt: number;
 }
 
 export interface ChatSize {
@@ -315,10 +371,16 @@ export function peekCurrentSession(): StoredMessage[] {
   }
 }
 
-/** Persist the last 3 sessions (oldest first). */
+/** Persist the last 30 sessions (oldest first). */
 export function saveSessions(sessions: Session[]): void {
   try {
-    localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions.slice(-3)));
+    const favorites = sessions.filter((session) => session.favorite);
+    const recent = sessions.filter((session) => !session.favorite).slice(-30);
+    const merged = [...favorites, ...recent]
+      .filter((session, index, all) => all.findIndex((entry) => entry.id === session.id) === index)
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .slice(-30);
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(merged));
   } catch (_) {}
 }
 
@@ -348,24 +410,131 @@ export function loadCalendarCache(): CalendarCache | null {
   }
 }
 
-export function saveTaskMemo(dateKey: string, items: TaskMemoItem[]): void {
+function normalizeTaskMemoItem(item: unknown): TaskMemoItem | null {
+  if (!item || typeof item !== "object") return null;
+  const value = item as Partial<TaskMemoItem>;
+  if (
+    typeof value.id !== "string"
+    || typeof value.text !== "string"
+    || typeof value.completed !== "boolean"
+    || typeof value.createdAt !== "number"
+  ) return null;
+  return {
+    id: value.id,
+    text: value.text,
+    completed: value.completed,
+    createdAt: value.createdAt,
+    priority: Boolean(value.priority),
+    reminderTime: typeof value.reminderTime === "string" ? value.reminderTime : null,
+    snoozedUntil: typeof value.snoozedUntil === "number" ? value.snoozedUntil : null,
+    carriedFrom: typeof value.carriedFrom === "string" ? value.carriedFrom : null,
+  };
+}
+
+function loadTaskArchive(): TaskMemoArchive {
   try {
-    localStorage.setItem(TASK_MEMO_KEY, JSON.stringify({ dateKey, items } satisfies TaskMemoStore));
+    const raw = localStorage.getItem(TASK_MEMO_KEY);
+    if (!raw) return { version: 2, days: {} };
+    const parsed = JSON.parse(raw) as Partial<TaskMemoArchive & LegacyTaskMemoStore>;
+    if (parsed.version === 2 && parsed.days && typeof parsed.days === "object") {
+      const days: Record<string, TaskMemoItem[]> = {};
+      Object.entries(parsed.days).forEach(([dateKey, items]) => {
+        if (!Array.isArray(items)) return;
+        days[dateKey] = items.map(normalizeTaskMemoItem).filter((item): item is TaskMemoItem => item !== null);
+      });
+      return { version: 2, days };
+    }
+    if (typeof parsed.dateKey === "string" && Array.isArray(parsed.items)) {
+      return {
+        version: 2,
+        days: {
+          [parsed.dateKey]: parsed.items
+            .map(normalizeTaskMemoItem)
+            .filter((item): item is TaskMemoItem => item !== null),
+        },
+      };
+    }
+  } catch (_) {}
+  return { version: 2, days: {} };
+}
+
+function saveTaskArchive(archive: TaskMemoArchive): void {
+  try {
+    const keepKeys = Object.keys(archive.days).sort().slice(-60);
+    const days = Object.fromEntries(keepKeys.map((key) => [key, archive.days[key]]));
+    localStorage.setItem(TASK_MEMO_KEY, JSON.stringify({ version: 2, days } satisfies TaskMemoArchive));
   } catch (_) {}
 }
 
+export function saveTaskMemo(dateKey: string, items: TaskMemoItem[]): void {
+  const archive = loadTaskArchive();
+  archive.days[dateKey] = items;
+  saveTaskArchive(archive);
+}
+
 export function loadTaskMemo(dateKey: string): TaskMemoItem[] {
+  const archive = loadTaskArchive();
+  if (Array.isArray(archive.days[dateKey])) return archive.days[dateKey];
+
+  const previousKeys = Object.keys(archive.days)
+    .filter((key) => key < dateKey)
+    .sort();
+  const previousKey = previousKeys[previousKeys.length - 1];
+  if (!previousKey) return [];
+
+  const carried = archive.days[previousKey]
+    .filter((item) => !item.completed)
+    .map((item, index) => ({
+      ...item,
+      id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`,
+      completed: false,
+      createdAt: Date.now(),
+      snoozedUntil: null,
+      carriedFrom: previousKey,
+    }));
+  archive.days[dateKey] = carried;
+  saveTaskArchive(archive);
+  return carried;
+}
+
+export function saveFavoriteMessages(items: FavoriteMessage[]): void {
   try {
-    const raw = localStorage.getItem(TASK_MEMO_KEY);
+    localStorage.setItem(FAVORITE_MESSAGES_KEY, JSON.stringify(items.slice(-50)));
+  } catch (_) {}
+}
+
+export function loadFavoriteMessages(): FavoriteMessage[] {
+  try {
+    const raw = localStorage.getItem(FAVORITE_MESSAGES_KEY);
     if (!raw) return [];
-    const parsed = JSON.parse(raw) as Partial<TaskMemoStore>;
-    if (parsed.dateKey !== dateKey || !Array.isArray(parsed.items)) return [];
-    return parsed.items.filter((item): item is TaskMemoItem => (
+    const parsed = JSON.parse(raw) as FavoriteMessage[];
+    return Array.isArray(parsed) ? parsed.filter((item) => (
       typeof item?.id === "string"
-      && typeof item?.text === "string"
-      && typeof item?.completed === "boolean"
+      && typeof item?.content === "string"
       && typeof item?.createdAt === "number"
-    ));
+    )) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+export function savePromptTemplates(items: PromptTemplate[]): void {
+  try {
+    localStorage.setItem(PROMPT_TEMPLATES_KEY, JSON.stringify(items.slice(-30)));
+  } catch (_) {}
+}
+
+export function loadPromptTemplates(): PromptTemplate[] {
+  try {
+    const raw = localStorage.getItem(PROMPT_TEMPLATES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as PromptTemplate[];
+    return Array.isArray(parsed) ? parsed.filter((item) => (
+      typeof item?.id === "string"
+      && typeof item?.label === "string"
+      && typeof item?.content === "string"
+      && typeof item?.createdAt === "number"
+    )) : [];
   } catch (_) {
     return [];
   }

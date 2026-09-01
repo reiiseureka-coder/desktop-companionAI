@@ -5,6 +5,15 @@ use std::thread;
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
+#[derive(serde::Serialize)]
+pub struct RuntimeDiagnostics {
+    pub codex_found: bool,
+    pub codex_version: String,
+    pub working_directory_ok: bool,
+    pub git_repository: bool,
+    pub git_remote: String,
+}
+
 /// Holds the PID of the currently running Codex process so it can be killed.
 static CURRENT_PID: Mutex<Option<u32>> = Mutex::new(None);
 
@@ -64,6 +73,55 @@ pub async fn stop_codex() -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn runtime_diagnostics(working_dir: Option<String>) -> RuntimeDiagnostics {
+    let codex_path = find_codex_binary();
+    let codex_version = codex_path
+        .as_ref()
+        .and_then(|path| Command::new(path).arg("--version").output().ok())
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .unwrap_or_default();
+
+    let directory = working_dir
+        .filter(|path| !path.trim().is_empty())
+        .map(std::path::PathBuf::from);
+    let working_directory_ok = directory.as_ref().map(|path| path.is_dir()).unwrap_or(false);
+    let git_output = directory.as_ref().and_then(|path| {
+        Command::new("git")
+            .env("PATH", build_extended_path())
+            .args(["-C", &path.to_string_lossy(), "rev-parse", "--is-inside-work-tree"])
+            .output()
+            .ok()
+    });
+    let git_repository = git_output
+        .as_ref()
+        .map(|output| output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "true")
+        .unwrap_or(false);
+    let git_remote = if git_repository {
+        directory.as_ref().and_then(|path| {
+            Command::new("git")
+                .env("PATH", build_extended_path())
+                .args(["-C", &path.to_string_lossy(), "config", "--get", "remote.origin.url"])
+                .output()
+                .ok()
+        })
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    RuntimeDiagnostics {
+        codex_found: codex_path.is_some(),
+        codex_version,
+        working_directory_ok,
+        git_repository,
+        git_remote,
+    }
 }
 
 fn run_codex(

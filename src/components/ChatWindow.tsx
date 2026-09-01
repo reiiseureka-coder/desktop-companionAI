@@ -6,6 +6,8 @@ import { open } from "@tauri-apps/api/dialog";
 import { readBinaryFile } from "@tauri-apps/api/fs";
 import { homeDir } from "@tauri-apps/api/path";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/api/notification";
+import { getVersion } from "@tauri-apps/api/app";
+import { appWindow } from "@tauri-apps/api/window";
 import ReactMarkdown from "react-markdown";
 import {
   loadSettings, saveSettings,
@@ -14,8 +16,11 @@ import {
   loadSessions, saveSessions,
   loadCalendarCache, saveCalendarCache,
   loadTaskMemo, saveTaskMemo, TASK_REMINDER_TIMES,
+  loadFavoriteMessages, saveFavoriteMessages,
+  loadPromptTemplates, savePromptTemplates,
   Session, DEFAULT_SYSTEM_PROMPT, MODELS, ModelId, CalendarItem, TaskMemoItem,
   COMPANION_MODES, CompanionMode, ProactiveLevel,
+  FavoriteMessage, PromptTemplate, DailySupportSetting,
 } from "../utils/storage";
 
 interface Message {
@@ -24,6 +29,32 @@ interface Message {
   content: string;
   streaming?: boolean;
 }
+
+interface RuntimeDiagnostics {
+  codex_found: boolean;
+  codex_version: string;
+  working_directory_ok: boolean;
+  git_repository: boolean;
+  git_remote: string;
+}
+
+interface DiagnosticsView extends RuntimeDiagnostics {
+  appVersion: string;
+  notificationGranted: boolean;
+  shortcutReady: boolean;
+}
+
+const SLASH_COMMANDS = [
+  { command: "/task ", label: "タスクを追加", example: "/task 資料を確認する" },
+  { command: "/remind ", label: "時刻つきタスク", example: "/remind 15:30 先方へ連絡" },
+  { command: "/today", label: "今日のタスクを開く", example: "/today" },
+  { command: "/history ", label: "履歴を検索", example: "/history 昨日の相談" },
+  { command: "/template ", label: "依頼テンプレートを保存", example: "/template 校正 | この文章を校正して" },
+  { command: "/diagnostics", label: "診断画面を開く", example: "/diagnostics" },
+  { command: "/clear", label: "現在の会話を整理", example: "/clear" },
+] as const;
+
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
 
 interface Props {
   chatOpen: boolean;
@@ -208,13 +239,14 @@ export default function ChatWindow({
   const [companionMode, setCompanionMode] = useState<CompanionMode>(savedSettings.companionMode);
   const [memory, setMemory] = useState(savedSettings.memory);
   const [proactiveLevel, setProactiveLevel] = useState<ProactiveLevel>(savedSettings.proactiveLevel);
+  const [dailySupports, setDailySupports] = useState<DailySupportSetting[]>(savedSettings.dailySupports);
 
   const [sessions, setSessions] = useState<Session[]>(() => {
     const existing = loadSessions();
     if (!savedSettings.resetOnOpen) return existing;
     const prev = popCurrentSession();
     if (prev.length === 0) return existing;
-    const newSessions = [...existing, { id: Date.now(), timestamp: Date.now(), messages: prev }].slice(-3);
+    const newSessions = [...existing, { id: Date.now(), timestamp: Date.now(), messages: prev }].slice(-30);
     saveSessions(newSessions);
     return newSessions;
   });
@@ -241,9 +273,19 @@ export default function ChatWindow({
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [taskMemos, setTaskMemos] = useState<TaskMemoItem[]>(() => loadTaskMemo(initialTodayKey));
   const [taskMemoInput, setTaskMemoInput] = useState("");
+  const [taskMemoStatus, setTaskMemoStatus] = useState<string | null>(null);
   const [taskReminderDraft, setTaskReminderDraft] = useState("10:00");
-  const [attachedImages, setAttachedImages] = useState<string[]>([]);
+  const [attachedPaths, setAttachedPaths] = useState<string[]>([]);
+  const [fileDropActive, setFileDropActive] = useState(false);
   const [contextStatus, setContextStatus] = useState<string | null>(null);
+  const [activeTaskActionId, setActiveTaskActionId] = useState<string | null>(null);
+  const [favoriteMessages, setFavoriteMessages] = useState<FavoriteMessage[]>(() => loadFavoriteMessages());
+  const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>(() => loadPromptTemplates());
+  const [historySearch, setHistorySearch] = useState("");
+  const [templateLabel, setTemplateLabel] = useState("");
+  const [templateContent, setTemplateContent] = useState("");
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsView | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
 
   const savedChatSize = loadChatSize();
   const [chatWidth, setChatWidth] = useState(savedChatSize.width);
@@ -259,6 +301,8 @@ export default function ChatWindow({
   const scheduleRequestInFlightRef = useRef(false);
   const calendarAutoRefreshAttemptedRef = useRef(false);
   const taskReminderTimeoutsRef = useRef<number[]>([]);
+  const perTaskReminderTimeoutsRef = useRef<number[]>([]);
+  const dailySupportTimeoutsRef = useRef<number[]>([]);
 
   useEffect(() => {
     homeDir().then((home) => {
@@ -286,6 +330,34 @@ export default function ChatWindow({
       el.removeEventListener("compositionend", onEnd);
     };
   }, []);
+
+  useEffect(() => {
+    const unlisten = appWindow.onFileDropEvent((event) => {
+      if (event.payload.type === "hover") {
+        setFileDropActive(true);
+        return;
+      }
+      if (event.payload.type === "cancel") {
+        setFileDropActive(false);
+        return;
+      }
+      setFileDropActive(false);
+      if (event.payload.type !== "drop") return;
+      const paths = event.payload.paths.filter(Boolean).slice(0, 5);
+      if (paths.length === 0) return;
+      setAttachedPaths((current) => [...new Set([...current, ...paths])].slice(0, 5));
+      setContextStatus(`${paths.length}件のファイルを添付しました`);
+    });
+    return () => { unlisten.then((dispose) => dispose()); };
+  }, []);
+
+  useEffect(() => {
+    saveFavoriteMessages(favoriteMessages);
+  }, [favoriteMessages]);
+
+  useEffect(() => {
+    savePromptTemplates(promptTemplates);
+  }, [promptTemplates]);
 
   useEffect(() => {
     if (logRef.current) {
@@ -316,6 +388,7 @@ export default function ChatWindow({
       companionMode,
       memory,
       proactiveLevel,
+      dailySupports,
     });
   }, [
     workingDir,
@@ -334,6 +407,7 @@ export default function ChatWindow({
     companionMode,
     memory,
     proactiveLevel,
+    dailySupports,
   ]);
 
   useEffect(() => {
@@ -569,9 +643,242 @@ export default function ChatWindow({
     };
   }, [ensureNotificationPermission, taskMemos, taskReminderTimes]);
 
+  useEffect(() => {
+    perTaskReminderTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    perTaskReminderTimeoutsRef.current = [];
+    let cancelled = false;
+
+    taskMemos.filter((item) => !item.completed && (item.reminderTime || item.snoozedUntil)).forEach((item) => {
+      const delay = item.snoozedUntil && item.snoozedUntil > Date.now()
+        ? item.snoozedUntil - Date.now()
+        : item.reminderTime
+          ? getNextTaskReminderDelay(item.reminderTime)
+          : 0;
+      if (delay <= 0) return;
+      const timeoutId = window.setTimeout(async () => {
+        if (cancelled) return;
+        const granted = await ensureNotificationPermission();
+        if (granted) {
+          await sendNotification({
+            title: "Shaolon AI：タスクの時間です",
+            body: `${item.text}（アプリで「完了」または「10分後」を選べます）`,
+          });
+        }
+        setActiveTaskActionId(item.id);
+        if (item.snoozedUntil) {
+          setTaskMemos((current) => {
+            const next = current.map((entry) => entry.id === item.id ? { ...entry, snoozedUntil: null } : entry);
+            saveTaskMemo(todayKey, next);
+            return next;
+          });
+        }
+      }, delay);
+      perTaskReminderTimeoutsRef.current.push(timeoutId);
+    });
+
+    return () => {
+      cancelled = true;
+      perTaskReminderTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+      perTaskReminderTimeoutsRef.current = [];
+    };
+  }, [ensureNotificationPermission, taskMemos, todayKey]);
+
+  useEffect(() => {
+    dailySupportTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    dailySupportTimeoutsRef.current = [];
+    let cancelled = false;
+
+    const scheduleSupport = (support: DailySupportSetting) => {
+      if (cancelled || !support.enabled) return;
+      const timeoutId = window.setTimeout(async () => {
+        const pending = taskMemos.filter((item) => !item.completed);
+        const priority = pending.filter((item) => item.priority);
+        const granted = await ensureNotificationPermission();
+        if (granted) {
+          const body = support.id === "morning"
+            ? pending.length > 0
+              ? `今日の未完了は${pending.length}件。最優先は「${(priority[0] ?? pending[0]).text}」です。`
+              : "今日のタスクを決めて、気持ちよく始めよう。"
+            : support.id === "midday"
+              ? pending.length > 0
+                ? `残り${pending.length}件です。次は「${(priority[0] ?? pending[0]).text}」からどう？`
+                : "今日のタスクは完了しています。お疲れさま！"
+              : pending.length > 0
+                ? `未完了${pending.length}件。明日へ自動で引き継ぎます。`
+                : "今日のタスクはすべて完了。お疲れさまでした！";
+          await sendNotification({ title: `Shaolon AI：${support.label}`, body });
+        }
+        scheduleSupport(support);
+      }, getNextTaskReminderDelay(support.time));
+      dailySupportTimeoutsRef.current.push(timeoutId);
+    };
+
+    dailySupports.forEach(scheduleSupport);
+    return () => {
+      cancelled = true;
+      dailySupportTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+      dailySupportTimeoutsRef.current = [];
+    };
+  }, [dailySupports, ensureNotificationPermission, taskMemos]);
+
+  const createTaskMemo = useCallback((rawText: string, reminderTime: string | null = null, priority = false) => {
+    const text = rawText.trim();
+    if (!text) return false;
+    let added = false;
+    setTaskMemos((current) => {
+      const priorityCount = current.filter((item) => item.priority && !item.completed).length;
+      const shouldPrioritize = priority && priorityCount < 3;
+      const next = [
+        ...current,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          text,
+          completed: false,
+          createdAt: Date.now(),
+          priority: shouldPrioritize,
+          reminderTime,
+          snoozedUntil: null,
+          carriedFrom: null,
+        },
+      ];
+      saveTaskMemo(todayKey, next);
+      added = true;
+      return next;
+    });
+    if (reminderTime) void ensureNotificationPermission();
+    return added;
+  }, [ensureNotificationPermission, todayKey]);
+
+  const refreshDiagnostics = useCallback(async () => {
+    setDiagnosticsLoading(true);
+    try {
+      const [runtime, appVersion, notificationGranted, shortcutStatuses] = await Promise.all([
+        invoke<RuntimeDiagnostics>("runtime_diagnostics", { workingDir: workingDir || null }),
+        getVersion(),
+        isPermissionGranted().catch(() => false),
+        invoke<string[]>("ensure_global_shortcuts").catch(() => []),
+      ]);
+      setDiagnostics({
+        ...runtime,
+        appVersion,
+        notificationGranted,
+        shortcutReady: shortcutStatuses.some((status) => status.startsWith("registered:")),
+      });
+    } catch (error) {
+      setContextStatus(`診断に失敗しました：${String(error)}`);
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  }, [workingDir]);
+
+  const executeLocalCommand = useCallback((rawText: string): boolean => {
+    const text = rawText.trim();
+    const taskMatch = text.match(/^\/(?:task|memo)\s+(.+)$/s)
+      ?? text.match(/^タスク(?:に)?追加[：:]\s*(.+)$/s);
+    if (taskMatch) {
+      createTaskMemo(taskMatch[1]);
+      setInput("");
+      setContextStatus("今日のタスクへ追加しました");
+      return true;
+    }
+
+    if (/これ.*タスク.*追加/.test(text)) {
+      const lastAnswer = [...messages].reverse().find((message) => message.role === "assistant" && message.content.trim());
+      if (lastAnswer) {
+        const summary = lastAnswer.content.split("\n").find((line) => line.trim())?.replace(/^#+\s*/, "").slice(0, 120);
+        if (summary) {
+          createTaskMemo(summary);
+          setInput("");
+          setContextStatus("直前の回答をタスクへ追加しました");
+          return true;
+        }
+      }
+    }
+
+    const remindMatch = text.match(/^\/remind\s+((?:[01]\d|2[0-3]):[0-5]\d)(?:\s+(.+))?$/s);
+    if (remindMatch) {
+      const [, time, taskText] = remindMatch;
+      if (taskText?.trim()) {
+        createTaskMemo(taskText, time);
+        setContextStatus(`${time}の通知つきタスクを追加しました`);
+      } else if (TASK_REMINDER_TIMES.includes(time)) {
+        setTaskReminderTimes((current) => [...new Set([...current, time])].sort());
+        void ensureNotificationPermission();
+        setContextStatus(`${time}の定時リマインドを追加しました`);
+      } else {
+        setContextStatus("内容も入力してください。例：/remind 15:30 先方へ連絡");
+      }
+      setInput("");
+      return true;
+    }
+
+    if (text === "/today") {
+      setShowTaskMemo(true);
+      setShowTodaySchedule(false);
+      setShowSettings(false);
+      setInput("");
+      return true;
+    }
+
+    if (text.startsWith("/history")) {
+      setHistorySearch(text.slice("/history".length).trim());
+      setShowSettings(true);
+      setShowTaskMemo(false);
+      setShowTodaySchedule(false);
+      setInput("");
+      return true;
+    }
+
+    if (text.startsWith("/template ")) {
+      const [label, ...contentParts] = text.slice("/template ".length).split("|");
+      const content = contentParts.join("|").trim();
+      if (!label.trim() || !content) {
+        setContextStatus("例：/template 校正 | この文章を校正して");
+      } else {
+        setPromptTemplates((current) => [...current, {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          label: label.trim(),
+          content,
+          createdAt: Date.now(),
+        }]);
+        setContextStatus(`「${label.trim()}」をテンプレートへ保存しました`);
+      }
+      setInput("");
+      return true;
+    }
+
+    if (text === "/diagnostics") {
+      setShowSettings(true);
+      setShowTaskMemo(false);
+      setShowTodaySchedule(false);
+      setInput("");
+      void refreshDiagnostics();
+      return true;
+    }
+
+    if (text === "/clear") {
+      const filtered = messages.filter((message) => !message.streaming);
+      if (filtered.length > 0) {
+        setSessions((current) => {
+          const next = [...current, { id: Date.now(), timestamp: Date.now(), messages: filtered }].slice(-30);
+          saveSessions(next);
+          return next;
+        });
+      }
+      setMessages([]);
+      setInput("");
+      saveCurrentSession([]);
+      return true;
+    }
+
+    return false;
+  }, [createTaskMemo, ensureNotificationPermission, messages, refreshDiagnostics]);
+
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || isLoading) return;
+
+    if (executeLocalCommand(text)) return;
 
     setInput("");
     setIsLoading(true);
@@ -592,16 +899,21 @@ export default function ChatWindow({
       const memoryPrompt = memory.trim()
         ? `\n\nユーザーが明示的に保存した記憶:\n${memory.trim()}`
         : "";
+      const imagePaths = attachedPaths.filter((path) => IMAGE_EXTENSIONS.has(path.split(".").pop()?.toLowerCase() ?? ""));
+      const documentPaths = attachedPaths.filter((path) => !imagePaths.includes(path));
+      const attachmentPrompt = documentPaths.length > 0
+        ? `\n\n添付ファイルを確認してください:\n${documentPaths.map((path) => `- ${path}`).join("\n")}`
+        : "";
       await invoke("send_to_codex", {
-        message: text,
+        message: `${text}${attachmentPrompt}`,
         context: contextMessages,
         workingDir: workingDir || null,
         autoPermissions,
         systemPrompt: `${systemPrompt.trim()}\n\n現在の作業モード: ${modePrompt}${memoryPrompt}`.trim() || null,
         model: model || null,
-        imagePaths: attachedImages.length > 0 ? attachedImages : null,
+        imagePaths: imagePaths.length > 0 ? imagePaths : null,
       });
-      setAttachedImages([]);
+      setAttachedPaths([]);
       setContextStatus(null);
     } catch (e) {
       setIsLoading(false);
@@ -610,7 +922,7 @@ export default function ChatWindow({
         return [...filtered, { id: ++msgId, role: "error", content: `起動エラー: ${String(e)}` }];
       });
     }
-  }, [input, isLoading, messages, workingDir, autoPermissions, systemPrompt, model, companionMode, memory, attachedImages]);
+  }, [attachedPaths, autoPermissions, companionMode, executeLocalCommand, input, isLoading, memory, messages, model, systemPrompt, workingDir]);
 
   const handleStop = useCallback(async () => {
     await invoke("stop_codex").catch(() => {});
@@ -649,7 +961,7 @@ export default function ChatWindow({
     try {
       setContextStatus("画面を取得中…");
       const path = await invoke<string>("capture_current_screen");
-      setAttachedImages([path]);
+      setAttachedPaths([path]);
       setContextStatus("現在の画面を添付しました");
       inputRef.current?.focus();
     } catch (error) {
@@ -711,7 +1023,7 @@ export default function ChatWindow({
     if (filtered.length > 0) {
       const newSession: Session = { id: Date.now(), timestamp: Date.now(), messages: filtered };
       setSessions((prev) => {
-        const updated = [...prev, newSession].slice(-3);
+        const updated = [...prev, newSession].slice(-30);
         saveSessions(updated);
         return updated;
       });
@@ -797,26 +1109,58 @@ export default function ChatWindow({
   const addTaskMemo = useCallback(() => {
     const text = taskMemoInput.trim();
     if (!text) return;
-    setTaskMemos((current) => {
-      const next = [
-        ...current,
-        { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, text, completed: false, createdAt: Date.now() },
-      ];
-      saveTaskMemo(todayKey, next);
-      return next;
-    });
+    createTaskMemo(text);
     setTaskMemoInput("");
-  }, [taskMemoInput, todayKey]);
+  }, [createTaskMemo, taskMemoInput]);
 
   const toggleTaskMemo = useCallback((id: string) => {
     setTaskMemos((current) => {
       const next = current.map((item) => item.id === id
-        ? { ...item, completed: !item.completed }
+        ? { ...item, completed: !item.completed, snoozedUntil: null }
         : item);
       saveTaskMemo(todayKey, next);
       return next;
     });
+    if (activeTaskActionId === id) setActiveTaskActionId(null);
+  }, [activeTaskActionId, todayKey]);
+
+  const toggleTaskPriority = useCallback((id: string) => {
+    setTaskMemos((current) => {
+      const target = current.find((item) => item.id === id);
+      if (!target) return current;
+      if (!target.priority && current.filter((item) => item.priority && !item.completed).length >= 3) {
+        setTaskMemoStatus("最優先タスクは3件までです");
+        return current;
+      }
+      const next = current.map((item) => item.id === id ? { ...item, priority: !item.priority } : item);
+      saveTaskMemo(todayKey, next);
+      setTaskMemoStatus(null);
+      return next;
+    });
   }, [todayKey]);
+
+  const updateTaskReminder = useCallback((id: string, reminderTime: string) => {
+    setTaskMemos((current) => {
+      const next = current.map((item) => item.id === id
+        ? { ...item, reminderTime: reminderTime || null, snoozedUntil: null }
+        : item);
+      saveTaskMemo(todayKey, next);
+      return next;
+    });
+    if (reminderTime) void ensureNotificationPermission();
+  }, [ensureNotificationPermission, todayKey]);
+
+  const snoozeTask = useCallback((id: string) => {
+    const snoozedUntil = Date.now() + (10 * 60 * 1000);
+    setTaskMemos((current) => {
+      const next = current.map((item) => item.id === id ? { ...item, snoozedUntil } : item);
+      saveTaskMemo(todayKey, next);
+      return next;
+    });
+    setActiveTaskActionId(null);
+    setTaskMemoStatus("10分後にもう一度通知します");
+    void ensureNotificationPermission();
+  }, [ensureNotificationPermission, todayKey]);
 
   const removeTaskMemo = useCallback((id: string) => {
     setTaskMemos((current) => {
@@ -824,7 +1168,49 @@ export default function ChatWindow({
       saveTaskMemo(todayKey, next);
       return next;
     });
-  }, [todayKey]);
+    if (activeTaskActionId === id) setActiveTaskActionId(null);
+  }, [activeTaskActionId, todayKey]);
+
+  const toggleFavoriteMessage = useCallback((content: string) => {
+    setFavoriteMessages((current) => {
+      const existing = current.find((item) => item.content === content);
+      if (existing) return current.filter((item) => item.id !== existing.id);
+      return [...current, {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        content,
+        createdAt: Date.now(),
+      }];
+    });
+  }, []);
+
+  const toggleSessionFavorite = useCallback((id: number) => {
+    setSessions((current) => {
+      const next = current.map((session) => session.id === id
+        ? { ...session, favorite: !session.favorite }
+        : session);
+      saveSessions(next);
+      return next;
+    });
+  }, []);
+
+  const addPromptTemplate = useCallback(() => {
+    const label = templateLabel.trim();
+    const content = templateContent.trim();
+    if (!label || !content) return;
+    setPromptTemplates((current) => [...current, {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      label,
+      content,
+      createdAt: Date.now(),
+    }]);
+    setTemplateLabel("");
+    setTemplateContent("");
+  }, [templateContent, templateLabel]);
+
+  const usePromptTemplate = useCallback((template: PromptTemplate) => {
+    setInput(template.content);
+    returnToChat();
+  }, [returnToChat]);
 
   const addTaskReminderTime = useCallback(() => {
     if (taskReminderTimes.includes(taskReminderDraft)) return;
@@ -835,6 +1221,33 @@ export default function ChatWindow({
   const removeTaskReminderTime = useCallback((time: string) => {
     setTaskReminderTimes((current) => current.filter((entry) => entry !== time));
   }, []);
+
+  const activeTaskAction = taskMemos.find((item) => item.id === activeTaskActionId && !item.completed) ?? null;
+  const sortedTaskMemos = [...taskMemos].sort((a, b) => {
+    if (a.completed !== b.completed) return a.completed ? 1 : -1;
+    if (Boolean(a.priority) !== Boolean(b.priority)) return a.priority ? -1 : 1;
+    return a.createdAt - b.createdAt;
+  });
+  const normalizedHistorySearch = historySearch.trim().toLowerCase();
+  const historyDateKey = normalizedHistorySearch === "今日"
+    ? getTodayDateKey()
+    : normalizedHistorySearch === "昨日"
+      ? getTodayDateKey(new Date(Date.now() - (24 * 60 * 60 * 1000)))
+      : null;
+  const filteredSessions = sessions
+    .filter((session) => {
+      if (historyDateKey) return getTodayDateKey(new Date(session.timestamp)) === historyDateKey;
+      return !normalizedHistorySearch || session.messages.some((message) => (
+        message.content.toLowerCase().includes(normalizedHistorySearch)
+      ));
+    })
+    .sort((a, b) => Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)) || b.timestamp - a.timestamp);
+  const slashSuggestions = input.startsWith("/") && !input.includes("\n")
+    ? SLASH_COMMANDS.filter((entry) => (
+      entry.command.trim().startsWith(input.trim().split(/\s/)[0])
+      || entry.label.includes(input.slice(1))
+    )).slice(0, 6)
+    : [];
 
   const dirName = workingDir
     ? (workingDir === homeDirRef.current ? "~" : workingDir.split("/").pop() || workingDir)
@@ -902,8 +1315,7 @@ export default function ChatWindow({
           </div>
         </div>
 
-        {showSettings ? (
-          <div className="settings-panel">
+        <section className={`settings-panel panel-view ${showSettings ? "" : "panel-view--hidden"}`} aria-hidden={!showSettings}>
             <div className="settings-row">
               <span className="settings-label">キャラクターサイズ ({charSize}px)</span>
               <input
@@ -1084,26 +1496,117 @@ export default function ChatWindow({
                 <option value="proactive">積極的（15分前）</option>
               </select>
             </div>
-            {sessions.length > 0 && (
-              <div className="settings-row">
-                <span className="settings-label">過去の会話</span>
+            <div className="settings-row settings-card">
+              <span className="settings-label">会話履歴（最大30件）</span>
+              <input
+                className="settings-text-input"
+                value={historySearch}
+                onChange={(event) => setHistorySearch(event.target.value)}
+                placeholder="履歴を検索"
+              />
+              {filteredSessions.length === 0 ? (
+                <div className="task-memo-empty">一致する履歴はありません</div>
+              ) : (
                 <div className="session-list">
-                  {sessions.slice().reverse().map((s) => {
-                    const userCount = s.messages.filter((m) => m.role === "user").length;
-                    const preview = s.messages.find((m) => m.role === "user")?.content.slice(0, 20) || "";
+                  {filteredSessions.map((session) => {
+                    const userCount = session.messages.filter((message) => message.role === "user").length;
+                    const preview = session.title
+                      || session.messages.find((message) => message.role === "user")?.content.slice(0, 28)
+                      || "会話";
                     return (
-                      <button key={s.id} className="btn-session" onClick={() => restoreSession(s)}>
-                        <span className="btn-session-date">{formatSessionDate(s.timestamp)}</span>
-                        <span className="btn-session-preview">「{preview}…」({userCount}件)</span>
-                      </button>
+                      <div key={session.id} className="session-entry">
+                        <button className="btn-session" onClick={() => restoreSession(session)}>
+                          <span className="btn-session-date">{formatSessionDate(session.timestamp)}</span>
+                          <span className="btn-session-preview">「{preview}…」({userCount}件)</span>
+                        </button>
+                        <button
+                          className={`session-favorite ${session.favorite ? "active" : ""}`}
+                          onClick={() => toggleSessionFavorite(session.id)}
+                          title="会話をお気に入り"
+                        >
+                          {session.favorite ? "★" : "☆"}
+                        </button>
+                      </div>
                     );
                   })}
                 </div>
+              )}
+            </div>
+
+            <div className="settings-row settings-card">
+              <span className="settings-label">依頼テンプレート</span>
+              <div className="template-editor">
+                <input
+                  className="settings-text-input"
+                  value={templateLabel}
+                  onChange={(event) => setTemplateLabel(event.target.value)}
+                  placeholder="名前（例：文章校正）"
+                />
+                <textarea
+                  className="settings-system-prompt"
+                  value={templateContent}
+                  onChange={(event) => setTemplateContent(event.target.value)}
+                  rows={2}
+                  placeholder="よく使う依頼文"
+                />
+                <button className="btn-pick" onClick={addPromptTemplate} disabled={!templateLabel.trim() || !templateContent.trim()}>
+                  保存
+                </button>
               </div>
-            )}
-          </div>
-        ) : showTaskMemo ? (
-          <div className="schedule-panel">
+              <div className="template-list">
+                {promptTemplates.map((template) => (
+                  <div key={template.id} className="template-item">
+                    <button className="template-use" onClick={() => usePromptTemplate(template)} title={template.content}>
+                      {template.label}
+                    </button>
+                    <button onClick={() => setPromptTemplates((current) => current.filter((item) => item.id !== template.id))}>×</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="settings-row settings-card">
+              <span className="settings-label">保存した回答</span>
+              {favoriteMessages.length === 0 ? (
+                <div className="task-memo-empty">回答の☆を押すとここに保存されます</div>
+              ) : (
+                <div className="favorite-message-list">
+                  {favoriteMessages.slice().reverse().map((favorite) => (
+                    <div key={favorite.id} className="favorite-message-item">
+                      <button onClick={() => { setInput(favorite.content); returnToChat(); }} title={favorite.content}>
+                        {favorite.content.slice(0, 60)}{favorite.content.length > 60 ? "…" : ""}
+                      </button>
+                      <button onClick={() => setFavoriteMessages((current) => current.filter((item) => item.id !== favorite.id))}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="settings-row settings-card diagnostics-card">
+              <div className="settings-label-row">
+                <span className="settings-label">状態・診断</span>
+                <button className="btn-pick btn-pick--small" onClick={() => void refreshDiagnostics()} disabled={diagnosticsLoading}>
+                  {diagnosticsLoading ? "確認中…" : "確認"}
+                </button>
+              </div>
+              {diagnostics ? (
+                <div className="diagnostics-list">
+                  <span className={diagnostics.codex_found ? "ok" : "ng"}>Codex CLI：{diagnostics.codex_found ? diagnostics.codex_version || "利用可能" : "未検出"}</span>
+                  <span className={diagnostics.working_directory_ok ? "ok" : "ng"}>作業フォルダ：{diagnostics.working_directory_ok ? "正常" : "未設定・参照不可"}</span>
+                  <span className={diagnostics.notificationGranted ? "ok" : "ng"}>通知権限：{diagnostics.notificationGranted ? "許可済み" : "未許可"}</span>
+                  <span className={diagnostics.shortcutReady ? "ok" : "ng"}>呼び出しショートカット：{diagnostics.shortcutReady ? "登録済み" : "未登録"}</span>
+                  <span className={diagnostics.git_repository ? "ok" : "warn"}>Git：{diagnostics.git_repository ? "リポジトリ" : "通常フォルダ"}</span>
+                  <span className={diagnostics.git_remote ? "ok" : "warn"}>GitHub接続先：{diagnostics.git_remote || "未設定"}</span>
+                  <span className="ok">Shaolon AI：v{diagnostics.appVersion}</span>
+                  <span className="warn">画面収録：画面添付ボタンでmacOS権限を確認</span>
+                </div>
+              ) : (
+                <div className="task-memo-empty">「確認」を押すと動作環境をまとめて診断します</div>
+              )}
+            </div>
+        </section>
+        <main className={`schedule-panel panel-view ${showTaskMemo ? "" : "panel-view--hidden"}`} aria-hidden={!showTaskMemo}>
             <div className="schedule-panel-header">
               <div>
                 <div className="schedule-panel-title">タスクメモ</div>
@@ -1112,6 +1615,21 @@ export default function ChatWindow({
                 </div>
               </div>
             </div>
+
+            {activeTaskAction && (
+              <div className="task-action-banner">
+                <div>
+                  <strong>⏰ {activeTaskAction.text}</strong>
+                  <span>通知したタスクをどうしますか？</span>
+                </div>
+                <div className="task-action-buttons">
+                  <button onClick={() => toggleTaskMemo(activeTaskAction.id)}>完了</button>
+                  <button onClick={() => snoozeTask(activeTaskAction.id)}>10分後</button>
+                </div>
+              </div>
+            )}
+
+            {taskMemoStatus && <div className="task-memo-status">{taskMemoStatus}</div>}
 
             <section className="task-memo-card">
               <div className="task-section-title">今日のタスクメモ</div>
@@ -1136,40 +1654,98 @@ export default function ChatWindow({
                 <div className="task-memo-empty">まだタスクはありません</div>
               ) : (
                 <div className="task-memo-list">
-                  {taskMemos.map((item) => (
-                    <div key={item.id} className={`task-memo-item ${item.completed ? "completed" : ""}`}>
-                      <button
-                        className="task-memo-check"
-                        onClick={() => toggleTaskMemo(item.id)}
-                        title={item.completed ? "未完了に戻す" : "完了にする"}
-                      >
-                        {item.completed ? "✓" : ""}
-                      </button>
-                      <button className="task-memo-text" onClick={() => toggleTaskMemo(item.id)}>
-                        {item.text}
-                      </button>
-                      <button
-                        className="task-memo-delete"
-                        onClick={() => removeTaskMemo(item.id)}
-                        title="削除"
-                      >
-                        ×
-                      </button>
+                  {sortedTaskMemos.map((item) => (
+                    <div key={item.id} className={`task-memo-item ${item.completed ? "completed" : ""} ${item.priority ? "priority" : ""}`}>
+                      <div className="task-memo-main">
+                        <button
+                          className="task-memo-check"
+                          onClick={() => toggleTaskMemo(item.id)}
+                          title={item.completed ? "未完了に戻す" : "完了にする"}
+                        >
+                          {item.completed ? "✓" : ""}
+                        </button>
+                        <button className="task-memo-text" onClick={() => toggleTaskMemo(item.id)}>
+                          {item.text}
+                          {item.carriedFrom && <small>前日から引き継ぎ</small>}
+                        </button>
+                        <button
+                          className={`task-priority ${item.priority ? "active" : ""}`}
+                          onClick={() => toggleTaskPriority(item.id)}
+                          title="最優先に固定（最大3件）"
+                        >
+                          {item.priority ? "★" : "☆"}
+                        </button>
+                        <button
+                          className="task-memo-delete"
+                          onClick={() => removeTaskMemo(item.id)}
+                          title="削除"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      {!item.completed && (
+                        <div className="task-memo-controls">
+                          <label>
+                            通知
+                            <input
+                              type="time"
+                              value={item.reminderTime ?? ""}
+                              onChange={(event) => updateTaskReminder(item.id, event.target.value)}
+                            />
+                          </label>
+                          {item.reminderTime && <button onClick={() => updateTaskReminder(item.id, "")}>解除</button>}
+                          <button onClick={() => snoozeTask(item.id)}>10分後</button>
+                          {item.snoozedUntil && (
+                            <span>{new Date(item.snoozedUntil).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}に通知</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
               )}
             </section>
 
-          </div>
-        ) : showTodaySchedule ? (
-          <div className="schedule-panel">
+        </main>
+        <aside className={`schedule-panel panel-view ${showTodaySchedule ? "" : "panel-view--hidden"}`} aria-hidden={!showTodaySchedule}>
             <div className="schedule-panel-header">
               <div>
-                <div className="schedule-panel-title">Google Calendar</div>
-                <div className="schedule-panel-meta">連携設定</div>
+                <div className="schedule-panel-title">リマインド・Calendar</div>
+                <div className="schedule-panel-meta">毎日の声かけと予定連携</div>
               </div>
             </div>
+
+            <section className="task-reminder-card">
+              <div className="task-section-title">デイリーサポート</div>
+              <div className="task-section-help">
+                朝・昼・夕方に未完了タスクを確認します（アプリ起動中のみ）
+              </div>
+              <div className="daily-support-list">
+                {dailySupports.map((support) => (
+                  <div key={support.id} className="daily-support-row">
+                    <label className="settings-toggle">
+                      <input
+                        type="checkbox"
+                        checked={support.enabled}
+                        onChange={(event) => setDailySupports((current) => current.map((item) => (
+                          item.id === support.id ? { ...item, enabled: event.target.checked } : item
+                        )))}
+                      />
+                      <span>{support.label}</span>
+                    </label>
+                    <input
+                      type="time"
+                      className="settings-time-input"
+                      value={support.time}
+                      disabled={!support.enabled}
+                      onChange={(event) => setDailySupports((current) => current.map((item) => (
+                        item.id === support.id ? { ...item, time: event.target.value } : item
+                      )))}
+                    />
+                  </div>
+                ))}
+              </div>
+            </section>
 
             <section className="task-reminder-card">
               <div className="task-section-title">定時リマインド</div>
@@ -1368,9 +1944,10 @@ export default function ChatWindow({
                 </div>
               </section>
             )}
-          </div>
-        ) : (
+        </aside>
+        {!showSettings && !showTaskMemo && !showTodaySchedule && (
           <>
+            {fileDropActive && <div className="file-drop-overlay">ここにファイルをドロップ</div>}
             <div className="chat-log" ref={logRef}>
               {messages.length === 0 && (
                 <div className="chat-empty">
@@ -1392,6 +1969,20 @@ export default function ChatWindow({
                       <>
                         <div className="markdown"><ReactMarkdown>{msg.content}</ReactMarkdown></div>
                         {msg.streaming && <span className="cursor-blink">▋</span>}
+                        {!msg.streaming && msg.content && (
+                          <div className="message-actions">
+                            <button
+                              className={favoriteMessages.some((item) => item.content === msg.content) ? "active" : ""}
+                              onClick={() => toggleFavoriteMessage(msg.content)}
+                              title="回答を保存"
+                            >
+                              {favoriteMessages.some((item) => item.content === msg.content) ? "★ 保存済み" : "☆ 保存"}
+                            </button>
+                            <button onClick={() => { createTaskMemo(msg.content.split("\n")[0].replace(/^#+\s*/, "").slice(0, 120)); setContextStatus("回答をタスクへ追加しました"); }}>
+                              ＋ タスク
+                            </button>
+                          </div>
+                        )}
                       </>
                     ) : (
                       <>
@@ -1403,6 +1994,16 @@ export default function ChatWindow({
                 </div>
               ))}
             </div>
+
+            {activeTaskAction && (
+              <div className="task-action-banner compact">
+                <strong>⏰ {activeTaskAction.text}</strong>
+                <div className="task-action-buttons">
+                  <button onClick={() => toggleTaskMemo(activeTaskAction.id)}>完了</button>
+                  <button onClick={() => snoozeTask(activeTaskAction.id)}>10分後</button>
+                </div>
+              </div>
+            )}
 
             <div className="context-toolbar">
               <select
@@ -1421,18 +2022,29 @@ export default function ChatWindow({
               <button className="btn-context" onClick={insertClipboardContext} disabled={isLoading} title="クリップボードの文章を入力欄へペースト">
                 ⧉ ペースト
               </button>
-              {attachedImages.length > 0 && (
-                <button className="btn-context btn-context--active" onClick={() => { setAttachedImages([]); setContextStatus(null); }}>
-                  画像 ✓
+              {attachedPaths.length > 0 && (
+                <button className="btn-context btn-context--active" onClick={() => { setAttachedPaths([]); setContextStatus(null); }}>
+                  添付 {attachedPaths.length}件 ×
                 </button>
               )}
             </div>
             {contextStatus && <div className="context-status">{contextStatus}</div>}
+            {slashSuggestions.length > 0 && (
+              <div className="slash-menu">
+                {slashSuggestions.map((entry) => (
+                  <button key={entry.command} onClick={() => { setInput(entry.command); inputRef.current?.focus(); }}>
+                    <strong>{entry.command.trim()}</strong>
+                    <span>{entry.label}</span>
+                    <small>{entry.example}</small>
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="chat-input-area">
               <textarea
                 ref={inputRef}
                 className="chat-input"
-                placeholder={isLoading ? "考え中…" : "メッセージを入力（Enter改行 / Cmd+Enter送信）"}
+                placeholder={isLoading ? "考え中…" : "メッセージまたは / コマンド（ファイルもドロップできます）"}
                 value={input}
                 onChange={handleInput}
                 onKeyDown={handleKeyDown}

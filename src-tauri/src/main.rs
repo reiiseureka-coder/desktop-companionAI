@@ -246,6 +246,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             codex::send_to_codex,
             codex::stop_codex,
+            codex::runtime_diagnostics,
             set_cursor_passthrough,
             get_cursor_pos_native,
             capture_current_screen,
