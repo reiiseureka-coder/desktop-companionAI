@@ -237,6 +237,30 @@ fn write_clipboard_text(text: String) -> Result<(), String> {
     Err("クリップボードへのコピーは現在macOSのみ対応しています".into())
 }
 
+#[tauri::command]
+fn open_local_file(path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let requested = std::path::PathBuf::from(path);
+        if !requested.is_absolute() {
+            return Err("ファイルの場所を特定できませんでした".into());
+        }
+        let target = requested
+            .canonicalize()
+            .map_err(|_| "リンク先のファイルが見つかりませんでした".to_string())?;
+        let status = Command::new("/usr/bin/open")
+            .arg(&target)
+            .status()
+            .map_err(|e| format!("ファイルを開けませんでした: {}", e))?;
+        if status.success() {
+            return Ok(());
+        }
+        return Err("ファイルを開けませんでした".into());
+    }
+    #[cfg(not(target_os = "macos"))]
+    Err("ローカルファイルを開く機能は現在macOSのみ対応しています".into())
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(google_oauth::GoogleOAuthState::default())
@@ -278,6 +302,7 @@ fn main() {
             capture_current_screen,
             read_clipboard_text,
             write_clipboard_text,
+            open_local_file,
             ensure_global_shortcuts,
             google_oauth::google_calendar_access_token,
             google_oauth::google_calendar_events,

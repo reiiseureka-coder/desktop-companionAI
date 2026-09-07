@@ -1004,10 +1004,15 @@ export default function ChatWindow({
     try {
       let target = href;
       if (target.startsWith("sandbox:")) target = target.slice("sandbox:".length);
+      if (target.startsWith("file://")) target = target.slice("file://".length);
       if (!/^[a-z][a-z0-9+.-]*:/i.test(target) && !target.startsWith("/")) {
         target = `${workingDir.replace(/\/$/, "")}/${target.replace(/^\.\//, "")}`;
       }
-      await openExternal(target);
+      if (/^(https?:|mailto:|tel:)/i.test(target)) {
+        await openExternal(target);
+      } else {
+        await invoke("open_local_file", { path: decodeURIComponent(target) });
+      }
     } catch (error) {
       setContextStatus(`リンクを開けませんでした: ${String(error)}`);
     }
