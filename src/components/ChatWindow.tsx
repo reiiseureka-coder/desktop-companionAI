@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { exit } from "@tauri-apps/api/process";
+import { open as openExternal } from "@tauri-apps/api/shell";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/api/dialog";
 import { readBinaryFile } from "@tauri-apps/api/fs";
@@ -305,6 +306,14 @@ export default function ChatWindow({
   const perTaskReminderTimeoutsRef = useRef<number[]>([]);
   const dailySupportTimeoutsRef = useRef<number[]>([]);
 
+  const focusInputAtEnd = useCallback(() => {
+    const inputElement = inputRef.current;
+    if (!inputElement) return;
+    inputElement.focus();
+    const end = inputElement.value.length;
+    inputElement.setSelectionRange(end, end);
+  }, []);
+
   useEffect(() => {
     homeDir().then((home) => {
       homeDirRef.current = home;
@@ -313,8 +322,8 @@ export default function ChatWindow({
   }, []);
 
   useEffect(() => {
-    if (chatOpen && !showTodaySchedule && !showTaskMemo) inputRef.current?.focus();
-  }, [chatOpen, showTaskMemo, showTodaySchedule]);
+    if (chatOpen && !showTodaySchedule && !showTaskMemo) focusInputAtEnd();
+  }, [chatOpen, focusInputAtEnd, showTaskMemo, showTodaySchedule]);
 
   useEffect(() => {
     const el = inputRef.current;
@@ -964,11 +973,11 @@ export default function ChatWindow({
       const path = await invoke<string>("capture_current_screen");
       setAttachedPaths([path]);
       setContextStatus("現在の画面を添付しました");
-      inputRef.current?.focus();
+      focusInputAtEnd();
     } catch (error) {
       setContextStatus(String(error));
     }
-  }, []);
+  }, [focusInputAtEnd]);
 
   const pickAttachments = useCallback(async () => {
     try {
@@ -984,11 +993,25 @@ export default function ChatWindow({
 
       setAttachedPaths((current) => [...new Set([...current, ...selectedPaths])].slice(0, 5));
       setContextStatus(`${selectedPaths.length}件のファイルを添付しました`);
-      inputRef.current?.focus();
+      focusInputAtEnd();
     } catch (error) {
       setContextStatus(`ファイルを選択できませんでした: ${String(error)}`);
     }
-  }, []);
+  }, [focusInputAtEnd]);
+
+  const openMessageLink = useCallback(async (href?: string) => {
+    if (!href) return;
+    try {
+      let target = href;
+      if (target.startsWith("sandbox:")) target = target.slice("sandbox:".length);
+      if (!/^[a-z][a-z0-9+.-]*:/i.test(target) && !target.startsWith("/")) {
+        target = `${workingDir.replace(/\/$/, "")}/${target.replace(/^\.\//, "")}`;
+      }
+      await openExternal(target);
+    } catch (error) {
+      setContextStatus(`リンクを開けませんでした: ${String(error)}`);
+    }
+  }, [workingDir]);
 
   const copyLatestMessage = useCallback(async () => {
     const latestMessage = [...messages].reverse().find((message) => (
@@ -1991,7 +2014,26 @@ export default function ChatWindow({
                   <div className="chat-msg-content">
                     {msg.role === "assistant" ? (
                       <>
-                        <div className="markdown"><ReactMarkdown>{msg.content}</ReactMarkdown></div>
+                        <div className="markdown">
+                          <ReactMarkdown
+                            components={{
+                              a: ({ href, children }) => (
+                                <a
+                                  href={href}
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    void openMessageLink(href);
+                                  }}
+                                >
+                                  {children}
+                                </a>
+                              ),
+                            }}
+                          >
+                            {msg.content}
+                          </ReactMarkdown>
+                        </div>
                         {msg.streaming && <span className="cursor-blink">▋</span>}
                         {!msg.streaming && msg.content && (
                           <div className="message-actions">
@@ -2060,7 +2102,14 @@ export default function ChatWindow({
                 </button>
               )}
             </div>
-            {contextStatus && <div className="context-status">{contextStatus}</div>}
+            {contextStatus && (
+              <div className="context-status">
+                <span>{contextStatus}</span>
+                <button onClick={() => setContextStatus(null)} title="メッセージを閉じる" aria-label="メッセージを閉じる">
+                  ✕
+                </button>
+              </div>
+            )}
             {visibleCommands.length > 0 && (
               <div className="slash-menu">
                 {visibleCommands.map((entry) => (

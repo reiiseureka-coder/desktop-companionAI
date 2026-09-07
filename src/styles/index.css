@@ -1178,10 +1178,24 @@ html, body {
 }
 
 .context-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 2px 12px 4px;
   color: #8070b6;
   background: #fafaff;
   font-size: 10px;
+}
+
+.context-status button {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: #9b8dba;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 3px;
 }
 
 .chat-input-area {
@@ -1239,6 +1253,7 @@ html, body {
   line-height: 1.5;
   min-height: 36px;
   max-height: 120px;
+  caret-color: transparent;
 }
 
 .chat-input:focus {
