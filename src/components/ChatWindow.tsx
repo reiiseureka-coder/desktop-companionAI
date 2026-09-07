@@ -970,6 +970,26 @@ export default function ChatWindow({
     }
   }, []);
 
+  const pickAttachments = useCallback(async () => {
+    try {
+      const selected = await open({
+        title: "添付するファイルを選択",
+        multiple: true,
+      });
+      if (!selected) return;
+
+      const selectedPaths = (Array.isArray(selected) ? selected : [selected])
+        .filter((path): path is string => typeof path === "string" && path.length > 0);
+      if (selectedPaths.length === 0) return;
+
+      setAttachedPaths((current) => [...new Set([...current, ...selectedPaths])].slice(0, 5));
+      setContextStatus(`${selectedPaths.length}件のファイルを添付しました`);
+      inputRef.current?.focus();
+    } catch (error) {
+      setContextStatus(`ファイルを選択できませんでした: ${String(error)}`);
+    }
+  }, []);
+
   const copyLatestMessage = useCallback(async () => {
     const latestMessage = [...messages].reverse().find((message) => (
       message.role === "assistant" && !message.streaming && message.content.trim()
@@ -2053,6 +2073,15 @@ export default function ChatWindow({
               </div>
             )}
             <div className="chat-input-area">
+              <button
+                className="btn-attach-file"
+                onClick={() => void pickAttachments()}
+                disabled={isLoading || attachedPaths.length >= 5}
+                title={attachedPaths.length >= 5 ? "添付できるファイルは5件までです" : "ファイルを選択"}
+                aria-label="ファイルを選択"
+              >
+                ＋
+              </button>
               <textarea
                 ref={inputRef}
                 className="chat-input"
